@@ -1,0 +1,19 @@
+# DEVELOPMENT-only gateway catalog for the local stack (docker-compose.yml), never baked into the measured image.
+# The mock model short-circuits inside LiteLLM (mock_response), so no request leaves the gateway; per-token prices
+# make it meter real spend, readable back per virtual key. api_base and model are policy
+# literals; the round prices are the e2e's arithmetic, not the measured sheet, which only gateway/config.yaml carries.
+model_list:
+  - model_name: "sealedin/mock-demo"
+    litellm_params:
+      model: "hosted_vllm/Qwen/Qwen3.8-27B-TEE"
+      api_key: "sk-never-sent"
+      api_base: http://egress:8474/v1
+      mock_response: "Hello from the SealedIn mock model."
+      input_cost_per_token: 0.000001
+      output_cost_per_token: 0.000002
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+
+litellm_settings:
+  drop_params: true

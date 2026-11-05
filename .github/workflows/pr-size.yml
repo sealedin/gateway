@@ -1,0 +1,37 @@
+name: pr-size
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  pr-size:
+    runs-on: ubuntu-latest
+    name: Label and gate PR size
+    permissions:
+      pull-requests: write
+      contents: read
+      issues: write
+    steps:
+      - uses: codelytv/pr-size-labeler@095a41fca88b8764fd9e008ad269bcdb82bb38b9 # v1.10.4
+        with:
+          xs_label: 'size/xs'
+          xs_max_size: '10'
+          s_label: 'size/s'
+          s_max_size: '100'
+          m_label: 'size/m'
+          m_max_size: '400'
+          l_label: 'size/l'
+          l_max_size: '1000'
+          xl_label: 'size/xl'
+          fail_if_xl: 'true'
+          message_if_xl: >
+            This PR exceeds 1000 changed lines (excluding tests, docs, go.sum,
+            and generated files). Please split it into smaller PRs.
+          files_to_ignore: |
+            *.md
+            docs/**
+            **/*_test.go
+            go.sum
+            vendor/**
+            **/*.pb.go

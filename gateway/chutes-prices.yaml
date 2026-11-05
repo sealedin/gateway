@@ -1,0 +1,36 @@
+# Upstream list prices, USD per million tokens, as published by Chutes on as_of. The measured price sheet
+# (gateway/config.yaml, mirrored in internal/gateway.CanonicalModelPrices()) is each price times (100 + markup_percent)
+# over 100, exactly; the list test fails CI when the two drift. Not read at runtime: a record for the recomputation.
+as_of: 2026-11-03
+source: https://chutes.ai/app
+markup_percent: 5
+# max_output_tokens: max_output_length from https://llm.chutes.ai/v1/models on max_output_as_of. The egress clamps requests to
+# it and LiteLLM reserves against it (config.yaml model_info, internal/gateway.MaxOutputTokens()). max_input_tokens: context_length
+# from the same list, which caps the request guard's worst case for input (gateway/request_guard.py).
+max_output_as_of: 2026-11-04
+models:
+  zai-org/GLM-5.2-TEE:
+    input_usd_per_mtok: 1.25
+    output_usd_per_mtok: 3.95
+    max_output_tokens: 65535
+    max_input_tokens: 1048576
+  moonshotai/Kimi-K3-TEE:
+    input_usd_per_mtok: 1.85
+    output_usd_per_mtok: 9.50
+    max_output_tokens: 65535
+    max_input_tokens: 1048576
+  deepseek-ai/DeepSeek-V4-Flash-0731-TEE:
+    input_usd_per_mtok: 0.44
+    output_usd_per_mtok: 1.32
+    max_output_tokens: 131072
+    max_input_tokens: 1048576
+  Qwen/Qwen3.5-397B-A17B-TEE:
+    input_usd_per_mtok: 0.45
+    output_usd_per_mtok: 3.00
+    max_output_tokens: 65536
+    max_input_tokens: 262144
+  Qwen/Qwen3.8-27B-TEE:
+    input_usd_per_mtok: 0.039
+    output_usd_per_mtok: 1.25
+    max_output_tokens: 65536
+    max_input_tokens: 262144

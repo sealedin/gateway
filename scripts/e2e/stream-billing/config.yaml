@@ -1,0 +1,19 @@
+model_list:
+  - model_name: "e2e"
+    litellm_params:
+      model: "hosted_vllm/m"
+      api_key: "none"
+      api_base: http://upstream:9000/v1
+      input_cost_per_token: 0.001
+      output_cost_per_token: 0.001
+    model_info:
+      max_output_tokens: 1000
+      max_input_tokens: 2000
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+router_settings:
+  disable_cooldowns: true
+litellm_settings:
+  drop_params: true
+  disable_token_counter: true
+  callbacks: request_guard.guard

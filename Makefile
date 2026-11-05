@@ -1,0 +1,60 @@
+BINARY := build/gateway-identity
+RPCPROXY_BINARY := build/gateway-rpcproxy
+SALES_BINARY := build/gateway-sales
+DRAIN_BINARY := build/gateway-drain
+
+.PHONY: tidy fmt fmt-check lint test build build-egress build-rpcproxy build-sales build-drain build-reproducible e2e-stream-billing vuln all
+
+tidy:
+	go mod tidy && git diff --exit-code go.mod go.sum
+
+fmt:
+	goimports -w cmd internal
+
+fmt-check:
+	@out=$$(gofmt -l -s cmd internal); if [ -n "$$out" ]; then echo "$$out"; exit 1; fi
+
+lint:
+	go vet ./... && golangci-lint run -c .golangci.yml
+	./scripts/check-isolation.sh
+	./scripts/check-image-pins.sh
+
+test:
+	go test -race -covermode=atomic -coverprofile=coverage.out ./...
+
+build:
+	go build -trimpath -buildvcs=false -ldflags "-s -w -buildid=" -o $(BINARY) ./cmd/identity
+
+build-egress:
+	go build -trimpath -buildvcs=false -ldflags "-s -w -buildid=" -o build/gateway-egress ./cmd/egress
+
+build-rpcproxy:
+	go build -trimpath -buildvcs=false -ldflags "-s -w -buildid=" -o $(RPCPROXY_BINARY) ./cmd/rpcproxy
+
+build-sales:
+	go build -trimpath -buildvcs=false -ldflags "-s -w -buildid=" -o $(SALES_BINARY) ./cmd/sales
+
+build-drain:
+	go build -trimpath -buildvcs=false -ldflags "-s -w -buildid=" -o $(DRAIN_BINARY) ./cmd/drain
+
+e2e-stream-billing:
+	./scripts/e2e/stream-billing.sh
+
+build-reproducible:
+	$(MAKE) build BINARY=build/a && $(MAKE) build BINARY=build/b
+	@shasum -a 256 build/a build/b
+	@test "$$(shasum -a 256 build/a | cut -d' ' -f1)" = "$$(shasum -a 256 build/b | cut -d' ' -f1)"
+	$(MAKE) build-rpcproxy RPCPROXY_BINARY=build/c && $(MAKE) build-rpcproxy RPCPROXY_BINARY=build/d
+	@shasum -a 256 build/c build/d
+	@test "$$(shasum -a 256 build/c | cut -d' ' -f1)" = "$$(shasum -a 256 build/d | cut -d' ' -f1)"
+	$(MAKE) build-sales SALES_BINARY=build/e && $(MAKE) build-sales SALES_BINARY=build/f
+	@shasum -a 256 build/e build/f
+	@test "$$(shasum -a 256 build/e | cut -d' ' -f1)" = "$$(shasum -a 256 build/f | cut -d' ' -f1)"
+	$(MAKE) build-drain DRAIN_BINARY=build/g && $(MAKE) build-drain DRAIN_BINARY=build/h
+	@shasum -a 256 build/g build/h
+	@test "$$(shasum -a 256 build/g | cut -d' ' -f1)" = "$$(shasum -a 256 build/h | cut -d' ' -f1)"
+
+vuln:
+	govulncheck ./...
+
+all: tidy fmt-check lint test build build-egress build-rpcproxy build-sales build-drain

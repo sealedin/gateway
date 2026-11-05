@@ -1,0 +1,64 @@
+# SealedIn gateway, DEVELOPMENT topology: gateway and identity run as sibling containers, so the quote attests
+# only the identity service. The attested topology is docker-compose.phala.yml (one TD, measurement covers all).
+# Same two networks as the measured compose: `internal` (no route out) for everything, `egress` only where a route
+# out is needed. There is no edge here, so the published services sit on `egress` too (an internal-only container
+# cannot publish ports); Postgres stays internal-only like in production.
+services:
+  gateway:
+    # Built from gateway/Dockerfile rather than the raw LiteLLM image so the entrypoint wrapper runs in dev too; with
+    # no key volume mounted it takes LITELLM_MASTER_KEY from .env.
+    build: ./gateway
+    command: ["--config", "/config.yaml", "--port", "4000"]
+    ports:
+      - "127.0.0.1:4000:4000"
+    volumes:
+      - ./gateway/config.dev.yaml:/config.yaml:ro
+    env_file: .env
+    environment:
+      # Dev-only spend ledger so /key/info meters per-key usage; localhost topology, throwaway credentials.
+      DATABASE_URL: postgresql://litellm:sealedin-dev@db:5432/litellm
+    depends_on:
+      - db
+    networks:
+      - internal
+      - egress
+
+  db:
+    image: postgres@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+    environment:
+      POSTGRES_USER: litellm
+      POSTGRES_PASSWORD: sealedin-dev
+      POSTGRES_DB: litellm
+    networks:
+      - internal
+
+  # Exits at start without CHUTES_API_KEY (fail closed); the mock model never reaches it, so the e2e runs without one.
+  egress:
+    build:
+      context: .
+      dockerfile: Dockerfile.egress
+    environment:
+      CHUTES_API_KEY: ${CHUTES_API_KEY:-}
+    networks:
+      - internal
+      - egress
+
+  identity:
+    build: .
+    ports:
+      - "127.0.0.1:8471:8471"
+      # Dev only, loopback: there is no edge here, so the private listener (price, key issuance) is reached directly;
+      # the measured compose never publishes it.
+      - "127.0.0.1:8473:8473"
+    environment:
+      # Unattested fallbacks for key issuance; the measured compose derives the master key in the CVM instead.
+      SEALEDIN_LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-}
+      SEALEDIN_OPERATOR_API_KEY: ${SEALEDIN_OPERATOR_API_KEY:-}
+    networks:
+      - internal
+      - egress
+
+networks:
+  internal:
+    internal: true
+  egress:

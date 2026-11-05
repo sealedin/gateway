@@ -1,0 +1,87 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: all
+  disable:
+    # Deprecated, replaced by gomodguard_v2 (configured below).
+    - gomodguard
+    # Style opinions this codebase does not follow.
+    - depguard
+    - err113
+    - exhaustruct
+    - exhaustruct_v5
+    - funcorder
+    - ireturn
+    - nlreturn
+    - noinlineerr
+    - paralleltest
+    - prealloc
+    - varnamelen
+    - wrapcheck
+    - wsl
+    - wsl_v5
+  settings:
+    cyclop:
+      max-complexity: 30
+    funlen:
+      lines: 100
+    gocognit:
+      min-complexity: 20
+    lll:
+      line-length: 140
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+      settings:
+        shadow:
+          strict: true
+    errcheck:
+      check-type-assertions: true
+    exhaustive:
+      check:
+        - switch
+        - mapliteral
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+    tagliatelle:
+      # The gateway catalog struct decodes LiteLLM's YAML, whose keys are snake_case (model_list, api_base); tags must
+      # match that wire format, so snake is correct here rather than tagliatelle's camelCase default.
+      case:
+        rules:
+          yaml: snake
+          # JSON wire formats here (/v1/quote, /v1/tls, vendor verifier verdicts) are snake_case too.
+          json: snake
+    gomodguard_v2:
+      blocked:
+        - module: github.com/golang/protobuf
+          recommendations:
+            - google.golang.org/protobuf
+        - module: github.com/satori/go.uuid
+          recommendations:
+            - github.com/google/uuid
+        - module: github.com/gofrs/uuid
+          recommendations:
+            - github.com/google/uuid
+  exclusions:
+    rules:
+      # The Solana JSON-RPC and the x402 wire formats are camelCase by their specs.
+      - path: internal/(solanarpc|x402)/
+        linters:
+          - tagliatelle
+      - path: _test\.go
+        linters:
+          - bodyclose
+          - dupl
+          - funlen
+          - goconst
+          - gosec
+          - noctx
+
+formatters:
+  enable:
+    - goimports

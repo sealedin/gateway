@@ -1,0 +1,10 @@
+{
+  "captured_at": "2026-08-11T06:33:32Z",
+  "vm_id": "cmso9oldy00aqneiqcy2ifahq",
+  "domain": "salmon-pony.vm.scrtlabs.com",
+  "compose_commit": "2c2e4c66c80d768ee2f4df6a92bad978c2e2893d",
+  "pubkey": "4f3b45b412ebaad3e862208bf45c7cb89f54aa84fdd40a58dc571c68fb53ca5b",
+  "mr_td": "1e305ac8284517f73ada985bfc9fded48b23ed091ba8149678bb10207fb470c7903d7a8ddffa5a7be2a60e349bb75b6e",
+  "rtmr3": "de64404f9e163064eca60f6c7024e9112a8770e9441981b1d501e6575c89c591b5b3d648a4ce86b414fbad8eaf955b8d",
+  "compose_sha256": "baaf983a3f3c7af31fe879ea6ca0ab3b881eca4158cec749c175ca59bd494f28"
+}

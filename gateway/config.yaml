@@ -1,0 +1,83 @@
+# LiteLLM proxy configuration for the SealedIn gateway.
+# LiteLLM is used as a pinned dependency (docker image), not a fork.
+model_list:
+  # Curated catalog: Chutes TEE models only, each served through the attested
+  # egress (cmd/egress), which forwards end-to-end encrypted to a Chutes
+  # instance whose TDX and GPU attestation verified against the measured
+  # policy. The ids are the Chutes catalog ids (confidential_compute: true,
+  # mirrored in ConfidentialModels(), CI-enforced); LiteLLM strips the hosted_vllm/
+  # prefix, so the egress receives the Chutes id. hosted_vllm rather than openai:
+  # for openai/ LiteLLM bridges /v1/messages (Claude Code) via the Responses API,
+  # which the egress does not serve; other providers bridge to chat/completions. GLM-5.2 first: the
+  # recommended default for complex tasks. Qwen3.8-27B is the light option.
+  #
+  # Costs are the measured price sheet: one USD price per canonical model,
+  # the Chutes list price (gateway/chutes-prices.yaml) plus its markup,
+  # mirrored in CanonicalModelPrices() (CI-enforced, exact arithmetic);
+  # changing a price changes the measurement.
+  - model_name: "chutes/zai-org/GLM-5.2-TEE"
+    litellm_params:
+      <<: &egress
+        # The egress ignores the bearer; LiteLLM's openai provider needs one set.
+        api_key: egress
+        api_base: http://egress:8474/v1
+        # Claude Code's effort/adaptive-thinking fields become reasoning_effort on the
+        # chat/completions bridge, and the Chutes instances reject the key (HTTP 400).
+        additional_drop_params: ["reasoning_effort"]
+      model: "hosted_vllm/zai-org/GLM-5.2-TEE"
+      input_cost_per_token: &glm52-in 1.3125e-6
+      output_cost_per_token: &glm52-out 4.1475e-6
+    model_info:
+      max_input_tokens: 1048576
+      max_output_tokens: 65535
+  - model_name: "chutes/moonshotai/Kimi-K3-TEE"
+    litellm_params:
+      <<: *egress
+      model: "hosted_vllm/moonshotai/Kimi-K3-TEE"
+      input_cost_per_token: &kimi3-in 1.9425e-6
+      output_cost_per_token: &kimi3-out 9.975e-6
+    model_info:
+      max_input_tokens: 1048576
+      max_output_tokens: 65535
+  - model_name: "chutes/deepseek-ai/DeepSeek-V4-Flash-0731-TEE"
+    litellm_params:
+      <<: *egress
+      model: "hosted_vllm/deepseek-ai/DeepSeek-V4-Flash-0731-TEE"
+      input_cost_per_token: &dsv4f-in 4.62e-7
+      output_cost_per_token: &dsv4f-out 1.386e-6
+    model_info:
+      max_input_tokens: 1048576
+      max_output_tokens: 131072
+  - model_name: "chutes/Qwen/Qwen3.5-397B-A17B-TEE"
+    litellm_params:
+      <<: *egress
+      model: "hosted_vllm/Qwen/Qwen3.5-397B-A17B-TEE"
+      input_cost_per_token: &qwen35-in 4.725e-7
+      output_cost_per_token: &qwen35-out 3.15e-6
+    model_info:
+      max_input_tokens: 262144
+      max_output_tokens: 65536
+  - model_name: "chutes/Qwen/Qwen3.8-27B-TEE"
+    litellm_params:
+      <<: *egress
+      model: "hosted_vllm/Qwen/Qwen3.8-27B-TEE"
+      input_cost_per_token: &qwen38-in 4.095e-8
+      output_cost_per_token: &qwen38-out 1.3125e-6
+    model_info:
+      max_input_tokens: 262144
+      max_output_tokens: 65536
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+
+# One deployment per model: a cooldown after one upstream error is an outage for every key, and any key can trigger it.
+router_settings:
+  disable_cooldowns: true
+
+litellm_settings:
+  drop_params: true
+  # Counting tokens runs on the event loop at admission, in a tokenizer that a long run of one character holds for minutes, so
+  # any key could freeze every request. Metering stands on the upstream's usage chunk; the egress supplies one for a cut stream.
+  disable_token_counter: true
+  # Fields outside its list reach the upstream unpriced, whatever drop_params says; see the file.
+  callbacks: request_guard.guard

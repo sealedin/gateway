@@ -1,0 +1,10 @@
+# Solana RPC hosts, baked into the measured rpcproxy image: changing a host is a governance change (new digest, new
+# RTMR3), never a per-operator knob. The primary carries simulation, sending and status under the provider's API key
+# (the sealed env's SOLANA_RPC_API_KEY); a confirmation must also hold on the second, independent host, so one lying
+# provider cannot mint a key (docs/x402.md). A .invalid primary is a placeholder: scripts/check-release-pins.sh and the
+# proxy itself refuse it.
+primary:
+  url: https://mainnet.helius-rpc.com/
+  api_key_param: api-key
+confirmation:
+  url: https://api.mainnet-beta.solana.com/

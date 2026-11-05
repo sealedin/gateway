@@ -1,0 +1,35 @@
+# The pinned LiteLLM, Postgres and Caddy of the measured stack, a slow fake upstream, the drain under test. Published on
+# loopback only.
+name: sealedin-e2e-stream-billing
+services:
+  db:
+    image: postgres@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+    environment: {POSTGRES_USER: litellm, POSTGRES_PASSWORD: e2e, POSTGRES_DB: litellm}
+  upstream:
+    image: ghcr.io/berriai/litellm@sha256:237ed94c2b4bd821d44f4abd4b57b2ae7b3108a7b4a768d1d8cd7c1b3884c604
+    entrypoint: ["python3", "-I", "/fake_upstream.py"]
+    volumes: ["./fake_upstream.py:/fake_upstream.py:ro"]
+  gateway:
+    image: ghcr.io/berriai/litellm@sha256:237ed94c2b4bd821d44f4abd4b57b2ae7b3108a7b4a768d1d8cd7c1b3884c604
+    command: ["--config", "/config.yaml", "--port", "4000"]
+    environment:
+      DATABASE_URL: postgresql://litellm:e2e@db:5432/litellm
+      LITELLM_MASTER_KEY: sk-e2e-master
+      LITELLM_LOCAL_MODEL_COST_MAP: "True"
+    volumes: ["./config.yaml:/config.yaml:ro", "../../../gateway/request_guard.py:/request_guard.py:ro"]
+    ports: ["127.0.0.1:14000:4000"]
+    depends_on: [db, upstream]
+  drain:
+    build:
+      context: ../../..
+      dockerfile: Dockerfile.drain
+    ports: ["127.0.0.1:14077:8477"]
+    depends_on: [gateway]
+  edge:
+    image: caddy@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
+    environment:
+      EDGE_DOMAIN: "http://:8090"
+    # The measured table with only its TLS block stripped (the script writes it): no certificate here.
+    volumes: ["./edge.caddyfile:/etc/caddy/Caddyfile:ro"]
+    ports: ["127.0.0.1:14080:8090"]
+    depends_on: [drain]

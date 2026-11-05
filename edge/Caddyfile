@@ -1,0 +1,120 @@
+# The edge routing table, baked into the measured gateway-edge image like the gateway config (the compose cannot
+# bind-mount): an explicit allowlist of exact paths per upstream, everything else a bare 404; first match wins.
+# Matchers are exact on the decoded, cleaned path (only /v1/keys/* is a prefix, for the alias segment), mirroring the
+# ServeMux routes behind them, so path variants fall through and fail closed; cmd/identity's topology test pins this
+# table against the muxes and compose.
+{
+	# The runtime admin API could rewrite the very routing this image measures.
+	admin off
+	# On a client hang-up the reverse proxy logs the request's headers, with X-Api-Key in the clear, and its query string.
+	log default {
+		exclude http.handlers.reverse_proxy http.log.error
+	}
+}
+
+# Anything a path cleaner could fold into an allowlisted route (dot segments, encoded separators, doubled or
+# backslashed separators) is refused on the raw request path before any table is consulted; the Go topology test
+# pins this expression against a table of raw paths.
+(noncanonical) {
+	@noncanonical path_regexp (?i)(/\.\.?(/|$)|%2e|%2f|%5c|//|\\)
+	respond @noncanonical 404
+}
+
+# LiteLLM reads a body into memory before it checks a key, on /key/info as on inference; the drain's own cap is the same.
+(bodylimit) {
+	request_body {
+		max_size 32MiB
+	}
+}
+
+# Two tables behind two listeners. The HTTPS site on the custom domain obtains its own certificate and is what /v1/tls
+# endorses (the platform's own *.phala.network names admit only the platform's DNS-01 account; docs/domain.md has the
+# records); it serves everything. The plain listener on 8080, reached through the platform gateway's own TLS
+# (https://<app-id>-8080.<gateway-domain>), serves only the self-authenticating public table: a client key or an
+# operator token never crosses the platform gateway's TLS termination.
+(public) {
+	# Plaintext bootstrap: Intel-signed and enclave-signed payloads, the only routes the identity serves publicly.
+	@bootstrap path /v1/quote /v1/tls
+	reverse_proxy @bootstrap identity:8471
+	# Edge-only identity surface: the signed catalog (self-authenticating).
+	@catalog path /v1/catalog
+	reverse_proxy @catalog identity:8473
+	# The one probe exposed (readiness would enumerate upstream state).
+	@health path /health/liveliness
+	reverse_proxy @health gateway:4000
+}
+
+(inference) {
+	# A virtual key may read only its own info (bearer form); the key= lookup form is the admin's and could probe
+	# other keys, so it never leaves the edge.
+	@keylookup {
+		path /key/info
+		query key=*
+	}
+	respond @keylookup 404
+	# Inference only. Claude Code and the Anthropic SDK use /v1/messages (query string allowed) and
+	# /v1/messages/count_tokens; the OpenAI SDKs use /v1/models, /v1/chat/completions, /v1/completions,
+	# /v1/embeddings and /v1/responses, all through the drain, since LiteLLM bills a stream only at its end and a client
+	# could hang up first. /key/info lets a virtual key read its own spend. No LiteLLM admin, UI, /key/generate, /spend or
+	# /config is ever reachable.
+	@inference path /v1/models /v1/chat/completions /v1/completions /v1/embeddings /v1/messages /v1/messages/count_tokens /v1/responses
+	reverse_proxy @inference drain:8477
+	@keyinfo path /key/info
+	reverse_proxy @keyinfo gateway:4000
+}
+
+# The site's buy page calls these two routes from its own origin, and nothing else may; x402 buy has no browser caller.
+(buyerpage) {
+	@buyerpaths path /v1/keys/claim /v1/catalog
+	header @buyerpaths Vary Origin
+	@buyerorigin {
+		path /v1/keys/claim /v1/catalog
+		header Origin https://sealedin.ai
+	}
+	header @buyerorigin {
+		Access-Control-Allow-Origin https://sealedin.ai
+		Access-Control-Allow-Methods "GET, POST"
+		Access-Control-Allow-Headers "content-type, authorization"
+		Access-Control-Expose-Headers Retry-After
+	}
+	@buyerpreflight {
+		method OPTIONS
+		path /v1/keys/claim /v1/catalog
+		header Origin https://sealedin.ai
+	}
+	respond @buyerpreflight 204
+}
+
+{$EDGE_DOMAIN} {
+	# Only :443 passes through the platform gateway (by SNI), nothing on :80: TLS-ALPN-01 only, no wasted HTTP-01 attempts.
+	tls {
+		issuer acme {
+			disable_http_challenge
+		}
+	}
+	route {
+		import noncanonical
+		import bodylimit
+		import buyerpage
+		# Purchases and the operator's key issuance ride only the end-to-end TLS site (our certificate, endorsed by /v1/tls),
+		# never the platform-terminated 8080 listener where a key or a token would be readable in the platform gateway.
+		# First match wins: purchases go to the service that holds the fee payer, ahead of the /v1/keys/* prefix.
+		@sales path /v1/keys/buy /v1/keys/recover /v1/keys/claim
+		reverse_proxy @sales sales:8476
+		@keys path /v1/keys /v1/keys/*
+		reverse_proxy @keys identity:8473
+		import public
+		import inference
+		# Anything else: status only, no body, no hint of what exists behind the edge.
+		respond 404
+	}
+}
+
+http://:8080 {
+	route {
+		import noncanonical
+		import bodylimit
+		import public
+		respond 404
+	}
+}
