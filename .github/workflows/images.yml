@@ -56,3 +56,23 @@ jobs:
           provenance: true
           tags: ghcr.io/${{ github.repository_owner }}/${{ matrix.name }}:${{ github.sha }}
       - run: echo "${{ matrix.name }} ${{ steps.build.outputs.digest }}" >> "$GITHUB_STEP_SUMMARY"
+
+  # A warning only: a build must never depend on the provider's list, and this job shares nothing with the build.
+  measurements-drift:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      contents: read
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: make build-sync-measurements
+      - run: |
+          code=0
+          ./build/sync-measurements --check || code=$?
+          [ "$code" = 0 ] || echo "::warning::egress/policy.yaml differs from the Chutes measurement list (exit $code); see the log."

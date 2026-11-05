@@ -1,0 +1,54 @@
+# Opens a PR when the Chutes list adds RTMR0 values; a new MRTD or guest image fails the run and writes nothing.
+name: sync-measurements
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 6 * * *"
+
+permissions: {}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: make build-sync-measurements
+      # The binary itself, not make: make maps every failure to 2 and the exit code says which failure this is.
+      - name: Sync the policy
+        run: |
+          code=0
+          ./build/sync-measurements || code=$?
+          case "$code" in
+            0) ;;
+            3) echo "::error::Chutes lists a new guest image (RTMR1-3). Nothing changed. Review it and pin it by hand; see the log."; exit 1 ;;
+            *) echo "::error::Sync refused: a new MRTD, or the list could not be read. Nothing changed; see the log."; exit 1 ;;
+          esac
+      # The branch is named after the result, so a rerun with the same list pushes nothing and never force-pushes.
+      - name: Open a pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ github.event.repository.default_branch }}
+        run: |
+          git diff --quiet -- egress/policy.yaml && exit 0
+          branch="sync-measurements/$(sha256sum egress/policy.yaml | cut -c1-12)"
+          if ! git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
+            grep -q 'STALE DIGEST' docker-compose.phala.yml || sed -i \
+              '/gateway-egress@sha256:/i\    # STALE DIGEST: the policy changed after this build; rebuild, pin, remove this line.' docker-compose.phala.yml
+            git switch -c "$branch"
+            git add egress/policy.yaml docker-compose.phala.yml
+            git -c user.name=sealedin-agent -c user.email=agent@sealedin.ai commit -m "Pin new RTMR0 values from the Chutes measurement list"
+            git push origin "$branch"
+          fi
+          if [ -z "$(gh pr list --state all --head "$branch" --json number --jq '.[].number')" ]; then
+            gh pr create --base "$BASE" --head "$branch" --title "Pin new RTMR0 values from the Chutes measurement list" \
+              --body "From \`sync-measurements\`. Merging changes the measured egress image: rebuild it and pin the new digest before deploying."
+          fi
