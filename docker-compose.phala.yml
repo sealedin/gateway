@@ -24,8 +24,7 @@ services:
   # TLS edge: ACME HTTPS for the custom domain through the platform gateway's SNI passthrough, so the certificate is
   # ours and /v1/tls endorses it; TLS-ALPN-01 only, since :80 never passes through (HTTP-01 off, no port 80 published).
   edge:
-    # Placeholder: CI must publish gateway-edge under ghcr.io/sealedin and pin its digest here; deploy-phala.sh refuses zeros.
-    image: ghcr.io/sealedin/gateway-edge@sha256:0000000000000000000000000000000000000000000000000000000000000000
+    image: ghcr.io/sealedin/gateway-edge@sha256:def9319d09cf6efd4452ec48fe94fe004e36bf8d5289eedde6ca29402dcdd370
     environment:
       # &domain: single source of the app domain, shared with identity's -edge-sni; compose refuses to start unset.
       EDGE_DOMAIN: &domain "${SEALEDIN_EDGE_DOMAIN:?set SEALEDIN_EDGE_DOMAIN in the env file}"
@@ -45,8 +44,7 @@ services:
       - egress
 
   gateway:
-    # Placeholder: CI must publish gateway-gateway under ghcr.io/sealedin and pin its digest here; deploy-phala.sh refuses zeros.
-    image: ghcr.io/sealedin/gateway-gateway@sha256:0000000000000000000000000000000000000000000000000000000000000000
+    image: ghcr.io/sealedin/gateway-gateway@sha256:7c829a2a984c6340c04b571329f7bc0a9575e1fe154e7d35d35905ea6d90a23d
     # The gateway holds no provider key: its only upstream is the egress, which funds Chutes with CHUTES_API_KEY.
     environment:
       # Postgres enables LiteLLM virtual keys: revocable per-member keys with budgets and rate limits.
@@ -67,8 +65,7 @@ services:
   # Attested egress: the gateway's upstream for TEE models. It verifies each Chutes instance against the policy baked
   # into its image and forwards end-to-end encrypted to the attested instance key; never published.
   egress:
-    # Placeholder: CI must publish gateway-egress under ghcr.io/sealedin and pin its digest here; deploy-phala.sh refuses zeros.
-    image: ghcr.io/sealedin/gateway-egress@sha256:0000000000000000000000000000000000000000000000000000000000000000
+    image: ghcr.io/sealedin/gateway-egress@sha256:fecc7c2da6f90fec8d70b9cb8eacb8ba2a8959b432ada35d913a11030f041acd
     environment:
       CHUTES_API_KEY: ${CHUTES_API_KEY:?set CHUTES_API_KEY in the env file}
     networks:
@@ -78,8 +75,7 @@ services:
   # The sales service's only path to Solana: an allowlist of JSON-RPC methods to the hosts baked into its image; it holds
   # the provider's API key and no other; never published.
   rpcproxy:
-    # Placeholder: CI must publish gateway-rpcproxy under ghcr.io/sealedin and pin its digest here; deploy-phala.sh refuses zeros.
-    image: ghcr.io/sealedin/gateway-rpcproxy@sha256:0000000000000000000000000000000000000000000000000000000000000000
+    image: ghcr.io/sealedin/gateway-rpcproxy@sha256:598f40306be02bd7a89416861dcdf6106110b3628f2b3c216db78948ed58b8fb
     environment:
       SOLANA_RPC_API_KEY: ${SOLANA_RPC_API_KEY:?set SOLANA_RPC_API_KEY in the env file}
     networks:
@@ -89,8 +85,7 @@ services:
   # Between the edge and LiteLLM's inference routes: reads every reply to its end, so a client hanging up or stalling cannot
   # escape metering. Holds no secret and has no route out; never published.
   drain:
-    # Placeholder: CI must publish gateway-drain under ghcr.io/sealedin and pin its digest here; deploy-phala.sh refuses zeros.
-    image: ghcr.io/sealedin/gateway-drain@sha256:0000000000000000000000000000000000000000000000000000000000000000
+    image: ghcr.io/sealedin/gateway-drain@sha256:1c8b522414c7d597ef6244f59dd40f801e1bcf8ca253b5f01dbf4182bb9bb125
     # Above the server's shutdown budget, so what is running still gets billed.
     stop_grace_period: 12m
     depends_on:
@@ -101,8 +96,7 @@ services:
   # Sells keys over x402: parses clients' transactions and holds the operators' fee payer key, the one service that does. It
   # takes the secret behind sold keys and the master key from the identity's tmpfs volumes and has no agent socket; never published.
   sales:
-    # Placeholder: CI must publish gateway-sales under ghcr.io/sealedin and pin its digest here; deploy-phala.sh refuses zeros.
-    image: ghcr.io/sealedin/gateway-sales@sha256:0000000000000000000000000000000000000000000000000000000000000000
+    image: ghcr.io/sealedin/gateway-sales@sha256:59dab4dcd2de2d8223e5ca794a64920c73573598cd572b0f01be9c9d8bcff53f
     command: ["-virtual-key-secret-file", "/run/sealedin-virtualkey/virtual-key-secret", "-fee-payer-address-file", "/run/sealedin-feepayer-address/fee-payer-address", "-master-key-file", "/run/sealedin/litellm-master-key"]
     environment:
       SEALEDIN_FEE_PAYER_KEY: ${SEALEDIN_FEE_PAYER_KEY:?set SEALEDIN_FEE_PAYER_KEY in the env file}
@@ -133,8 +127,7 @@ services:
       - internal
 
   identity:
-    # Placeholder: CI must publish gateway-identity under ghcr.io/sealedin and pin its digest here; deploy-phala.sh refuses zeros.
-    image: ghcr.io/sealedin/gateway-identity@sha256:0000000000000000000000000000000000000000000000000000000000000000
+    image: ghcr.io/sealedin/gateway-identity@sha256:15bbab05e83088dce2a4b23a47beec43ef0ceec57c488887293884ddda7c18eb
     # The signed catalog (/v1/catalog) is the image's measured price sheet; the private listener on :8473 is edge-only.
     command: ["-edge-sni", *domain, "-private-listen", ":8473"]
     environment:
