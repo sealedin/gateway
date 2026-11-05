@@ -48,9 +48,10 @@ func readFixture(t *testing.T, parts ...string) []byte {
 }
 
 type fixture struct {
-	Nonce    string          `json:"nonce"`
-	ChuteID  string          `json:"chute_id"`
-	Evidence chutes.Evidence `json:"evidence"`
+	Nonce     string          `json:"nonce"`
+	ChuteID   string          `json:"chute_id"`
+	E2EPubkey string          `json:"e2e_pubkey"`
+	Evidence  chutes.Evidence `json:"evidence"`
 }
 
 func loadFixture(t *testing.T, name string) fixture {
@@ -394,6 +395,54 @@ func TestAttesterTake(t *testing.T) {
 	require.Len(t, api.calls, calls)
 }
 
+// signedBody re-encodes the fixture's attested_body with the signed quote under the given field names and re-signs it.
+func signedBody(t *testing.T, ev chutes.Evidence, quoteFields map[string]string) chutes.Evidence {
+	t.Helper()
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(mustDecode(t, ev.AttestedBody), &body))
+	evidence, ok := body["evidence"].(map[string]any)
+	require.True(t, ok)
+	delete(evidence, "tdx_quote")
+	delete(evidence, "quote")
+	for name, value := range quoteFields {
+		evidence[name] = value
+	}
+	raw, err := json.Marshal(body)
+	require.NoError(t, err)
+	ev.AttestedBody = base64.StdEncoding.EncodeToString(raw)
+	return resign(t, ev)
+}
+
+// The signed quote may sit under either name; a resigned body passes the signed part and stops at the impostor certificate.
+func TestVerifySignedQuoteField(t *testing.T) {
+	f := loadFixture(t, "blackwell")
+	quote, other := f.Evidence.Quote, loadFixture(t, "hopper").Evidence.Quote
+	const passed, differs = "REPORT_DATA[32:64]", "quote differs"
+	tests := []struct {
+		name    string
+		fields  map[string]string
+		wantErr string
+	}{
+		{"only tdx_quote", map[string]string{"tdx_quote": quote}, passed},
+		{"only quote", map[string]string{"quote": quote}, passed},
+		{"both equal", map[string]string{"tdx_quote": quote, "quote": quote}, passed},
+		{"both differ, quote is the other", map[string]string{"tdx_quote": quote, "quote": other}, differs},
+		{"both differ, tdx_quote is the other", map[string]string{"tdx_quote": other, "quote": quote}, differs},
+		{"only quote, not the verified one", map[string]string{"quote": other}, differs},
+		{"neither", map[string]string{}, differs},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var ok atomic.Int32
+			ok.Store(http.StatusOK)
+			_, err := fixtureVerifier(t, "blackwell", &ok).Verify(context.Background(), signedBody(t, f.Evidence, tt.fields),
+				f.Nonce, "unknown-key")
+			require.ErrorIs(t, err, chutes.ErrBinding)
+			require.ErrorContains(t, err, tt.wantErr)
+		})
+	}
+}
+
 // The signed attested_body carries the GPU evidence too; the unsigned sibling the verifier reads must be that copy.
 func TestVerifyRejectsUnsignedGPUEvidence(t *testing.T) {
 	f := loadFixture(t, "blackwell")
@@ -454,6 +503,21 @@ func mustDecode(t *testing.T, b64 string) []byte {
 	b, err := base64.StdEncoding.DecodeString(b64)
 	require.NoError(t, err)
 	return b
+}
+
+// A real instance on the renamed field, its signature, quote and E2EE key binding as recorded; only DCAP and the GPUs are stubbed.
+func TestVerifyRecordedQuoteFieldSample(t *testing.T) {
+	f := loadFixture(t, "quote-field")
+	report, err := tdx.Parse(mustDecode(t, f.Evidence.Quote))
+	require.NoError(t, err)
+	gpu := &stubGPU{}
+	v := &chutes.Verifier{TDX: stubQuote{report}, GPU: gpu, Policy: measuredPolicy(t), Now: captureTime}
+
+	verified, err := v.Verify(context.Background(), f.Evidence, f.Nonce, f.E2EPubkey)
+	require.NoError(t, err)
+	require.Equal(t, f.Evidence.InstanceID, verified.InstanceID)
+	require.Equal(t, f.E2EPubkey, verified.Pubkey)
+	require.Equal(t, int32(1), gpu.calls.Load())
 }
 
 // A failed refresh keeps serving known models within the grace period; unknown models and a cold cache still fail.

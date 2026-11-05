@@ -145,8 +145,9 @@ func (v *Verifier) checkSignature(ev Evidence, nonceHex string) (*x509.Certifica
 	var attested struct {
 		Nonce    string `json:"nonce"`
 		Evidence struct {
-			Quote string `json:"tdx_quote"`
-			GPUs  string `json:"nvtrust_evidence"`
+			TDXQuote *string `json:"tdx_quote"`
+			Quote    *string `json:"quote"` // what newer instances call tdx_quote; pointers tell absent from empty
+			GPUs     string  `json:"nvtrust_evidence"`
 		} `json:"evidence"`
 	}
 	if err = json.Unmarshal(body, &attested); err != nil {
@@ -155,7 +156,7 @@ func (v *Verifier) checkSignature(ev Evidence, nonceHex string) (*x509.Certifica
 	if subtle.ConstantTimeCompare([]byte(attested.Nonce), []byte(nonceHex)) != 1 {
 		return nil, fmt.Errorf("%w: attested_body nonce %q", ErrBinding, attested.Nonce)
 	}
-	if attested.Evidence.Quote != ev.Quote {
+	if !signedQuoteMatches(ev.Quote, attested.Evidence.TDXQuote, attested.Evidence.Quote) {
 		return nil, fmt.Errorf("%w: quote differs from the signed attested_body", ErrBinding)
 	}
 	// The unsigned gpu_evidence sibling is what gets verified; it must be the copy the proxy signed.
@@ -164,6 +165,21 @@ func (v *Verifier) checkSignature(ev Evidence, nonceHex string) (*x509.Certifica
 		return nil, fmt.Errorf("%w: gpu evidence differs from the signed attested_body", ErrBinding)
 	}
 	return cert, nil
+}
+
+// signedQuoteMatches requires at least one signed copy of the quote and every signed copy to be the one verified.
+func signedQuoteMatches(quote string, signed ...*string) bool {
+	found := false
+	for _, s := range signed {
+		if s == nil {
+			continue
+		}
+		if *s != quote {
+			return false
+		}
+		found = true
+	}
+	return found
 }
 
 func (v *Verifier) checkGPUs(ctx context.Context, ev Evidence, nonce [nonceByteLen]byte) (*nvidia.Verdict, error) {
