@@ -4,7 +4,7 @@ SALES_BINARY := build/gateway-sales
 DRAIN_BINARY := build/gateway-drain
 SYNC_BINARY := build/sync-measurements
 
-.PHONY: tidy fmt fmt-check lint test build build-egress build-rpcproxy build-sales build-drain build-sync-measurements sync-measurements check-measurements build-reproducible e2e-stream-billing vuln all
+.PHONY: tidy fmt fmt-check lint test build build-egress build-rpcproxy build-sales build-drain build-sync-measurements sync-measurements build-reproducible e2e-stream-billing vuln all
 
 tidy:
 	go mod tidy && git diff --exit-code go.mod go.sum
@@ -44,9 +44,6 @@ build-sync-measurements:
 # make maps every failure to 2; CI runs the binary itself to tell the exit codes apart (internal/measurements).
 sync-measurements: build-sync-measurements
 	./$(SYNC_BINARY)
-
-check-measurements: build-sync-measurements
-	./$(SYNC_BINARY) --check
 
 e2e-stream-billing:
 	./scripts/e2e/stream-billing.sh

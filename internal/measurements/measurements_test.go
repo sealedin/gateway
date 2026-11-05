@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/sealedin/gateway/internal/egress"
@@ -83,23 +82,23 @@ func TestSyncInsertsNewValuesAndNothingElse(t *testing.T) {
 	policy, list := readTestdata(t, "policy.yaml"), readTestdata(t, "list.json")
 	first := runTool(t, policy, http.StatusOK, list)
 	require.Equal(t, measurements.ExitOK, first.code, first.stderr)
-	assert.Equal(t, string(syncedPolicy(t)), string(first.policy))
-	assert.Contains(t, first.stdout, "1.5.0 new high")
-	assert.Contains(t, first.stdout, "1.5.0 new low again")
-	assert.NotContains(t, first.stdout, "too old")
-	assert.NotContains(t, first.stdout, "already pinned")
+	require.Equal(t, string(syncedPolicy(t)), string(first.policy))
+	require.Contains(t, first.stdout, `1.5.0 "new high"`)
+	require.Contains(t, first.stdout, `1.5.0 "new low again"`)
+	require.NotContains(t, first.stdout, "too old")
+	require.NotContains(t, first.stdout, "already pinned")
 
 	again := runTool(t, first.policy, http.StatusOK, list)
 	require.Equal(t, measurements.ExitOK, again.code, again.stderr)
-	assert.Equal(t, string(first.policy), string(again.policy), "a rerun changes no byte, the date included")
+	require.Equal(t, string(first.policy), string(again.policy), "a rerun changes no byte, the date included")
 }
 
 func TestCheckWritesNothing(t *testing.T) {
 	policy, list := readTestdata(t, "policy.yaml"), readTestdata(t, "list.json")
 	pending := runTool(t, policy, http.StatusOK, list, "--check")
 	require.Equal(t, measurements.ExitChanges, pending.code, pending.stderr)
-	assert.Equal(t, string(policy), string(pending.policy))
-	assert.Contains(t, pending.stdout, hex96("33"))
+	require.Equal(t, string(policy), string(pending.policy))
+	require.Contains(t, pending.stdout, hex96("33"))
 
 	clean := runTool(t, syncedPolicy(t), http.StatusOK, list, "--check")
 	require.Equal(t, measurements.ExitOK, clean.code, clean.stderr)
@@ -115,7 +114,7 @@ func TestSyncIgnoresEntriesBelowTheMinimumVersion(t *testing.T) {
 	})
 	got := runTool(t, policy, http.StatusOK, feed)
 	require.Equal(t, measurements.ExitOK, got.code, got.stderr)
-	assert.Equal(t, string(policy), string(got.policy))
+	require.Equal(t, string(policy), string(got.policy))
 }
 
 func mustJSON(t *testing.T, v any) []byte {
@@ -146,11 +145,11 @@ func TestSyncRefuses(t *testing.T) {
 		{"new mrtd", http.StatusOK, listOf(entry("1.5.0", "odd firmware", "98", "22", knownImage)),
 			measurements.ExitError, hex96("98")},
 		{"new image", http.StatusOK, listOf(entry("1.6.0", "next build", "11", "22", "b1")),
-			measurements.ExitNewImage, "1.6.0 next build"},
-		{"known rtmr1, other rtmr2 and rtmr3", http.StatusOK, listOf(mixedImage()), measurements.ExitNewImage, "1.6.0 mixed"},
+			measurements.ExitNewImage, `1.6.0 "next build"`},
+		{"known rtmr1, other rtmr2 and rtmr3", http.StatusOK, listOf(mixedImage()), measurements.ExitNewImage, `1.6.0 "mixed"`},
 		{"new image and new mrtd", http.StatusOK, mustJSON(t, []measurements.Entry{
 			entry("1.6.0", "next build", "11", "22", "b1"), entry("1.5.0", "odd firmware", "98", "22", knownImage)}),
-			measurements.ExitError, "1.6.0 next build"},
+			measurements.ExitError, `1.6.0 "next build"`},
 		{"short value", http.StatusOK, listOf(short), measurements.ExitError, "96 hex"},
 		{"non-hex value", http.StatusOK, listOf(nonHex), measurements.ExitError, "96 hex"},
 		{"missing rtmr", http.StatusOK, listOf(missing), measurements.ExitError, "96 hex"},
@@ -159,15 +158,18 @@ func TestSyncRefuses(t *testing.T) {
 		{"empty list", http.StatusOK, []byte(`[]`), measurements.ExitError, "empty"},
 		{"not json", http.StatusOK, []byte(`<html>`), measurements.ExitError, "decode"},
 		{"http error", http.StatusBadGateway, []byte(`[]`), measurements.ExitError, "502"},
+		{"redirect", http.StatusFound, []byte(`[]`), measurements.ExitError, "302"},
+		{"name with a line break", http.StatusOK, listOf(entry("1.6.0", "x\n::error::forged", "11", "22", "b1")),
+			measurements.ExitNewImage, `1.6.0 "x\n::error::forged"`},
 		{"oversized reply", http.StatusOK, bytes.Repeat([]byte(" "), measurements.MaxListBytes+1), measurements.ExitError, "exceeds"},
 	}
 	for _, tt := range tests {
 		for _, mode := range [][]string{nil, {"--check"}} {
 			t.Run(tt.name+strings.Join(mode, ""), func(t *testing.T) {
 				got := runTool(t, policy, tt.status, tt.body, mode...)
-				assert.Equal(t, tt.code, got.code)
-				assert.Contains(t, got.stderr, tt.wantErr)
-				assert.Equal(t, string(policy), string(got.policy))
+				require.Equal(t, tt.code, got.code)
+				require.Contains(t, got.stderr, tt.wantErr)
+				require.Equal(t, string(policy), string(got.policy))
 			})
 		}
 	}
@@ -223,5 +225,5 @@ func TestCommittedPolicyIsSyncable(t *testing.T) {
 		}
 	}
 	require.Len(t, changed, 1)
-	assert.Contains(t, changed[0], "last synced on 2099-12-31 from "+strings.TrimPrefix(measurements.SourceURL, "https://"))
+	require.Contains(t, changed[0], "last synced on 2099-12-31 from "+strings.TrimPrefix(measurements.SourceURL, "https://"))
 }

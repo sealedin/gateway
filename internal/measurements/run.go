@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -70,7 +71,7 @@ func syncPolicy(ctx context.Context, url, path string, check bool, stdout io.Wri
 		verb = "would add"
 	}
 	for _, a := range result.Added {
-		_, _ = fmt.Fprintf(stdout, "%s rtmr0 %s: %q\n", verb, a.Value, a.Sources)
+		_, _ = fmt.Fprintf(stdout, "%s rtmr0 %s: %s\n", verb, a.Value, strings.Join(a.Sources, ", "))
 	}
 	if check {
 		return ExitChanges, nil
@@ -122,7 +123,9 @@ func readLimited(r io.Reader) ([]byte, error) {
 
 // newClient has a timeout and, as for the egress's own clients, no proxy from the environment and no redirects.
 func newClient() *http.Client {
-	return &http.Client{Timeout: fetchTimeout, Transport: &http.Transport{},
+	transport := http.DefaultTransport.(*http.Transport).Clone() //nolint:errcheck,forcetypeassert // stdlib type
+	transport.Proxy = nil
+	return &http.Client{Timeout: fetchTimeout, Transport: transport,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 }
 

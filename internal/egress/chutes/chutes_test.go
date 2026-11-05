@@ -413,7 +413,7 @@ func signedBody(t *testing.T, ev chutes.Evidence, quoteFields map[string]string)
 	return resign(t, ev)
 }
 
-// The signed quote may sit under either name; a resigned body passes the signed part and stops at the impostor certificate.
+// The signed quote may sit under either name; a resigned body passes that check and stops at the impostor certificate.
 func TestVerifySignedQuoteField(t *testing.T) {
 	f := loadFixture(t, "blackwell")
 	quote, other := f.Evidence.Quote, loadFixture(t, "hopper").Evidence.Quote
@@ -505,7 +505,7 @@ func mustDecode(t *testing.T, b64 string) []byte {
 	return b
 }
 
-// A real instance on the renamed field, its signature, quote and E2EE key binding as recorded; only DCAP and the GPUs are stubbed.
+// A real instance on the renamed field, its signature and E2EE key binding as recorded; DCAP and GPUs are stubbed.
 func TestVerifyRecordedQuoteFieldSample(t *testing.T) {
 	f := loadFixture(t, "quote-field")
 	report, err := tdx.Parse(mustDecode(t, f.Evidence.Quote))

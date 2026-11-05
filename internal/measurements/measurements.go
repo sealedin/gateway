@@ -58,7 +58,7 @@ type Result struct {
 	Added  []Added
 }
 
-// Apply refuses the whole list on any unknown MRTD or image, otherwise inserts the new RTMR0 values into the policy text.
+// Apply refuses the whole list on any unknown MRTD or image, otherwise inserts the new RTMR0 values into the text.
 func Apply(policy []byte, entries []Entry, today string) (Result, error) {
 	parsed, err := egress.LoadPolicy(bytes.NewReader(policy))
 	if err != nil {
@@ -94,7 +94,8 @@ func review(policy tdx.Policy, entries []Entry) ([]Added, error) {
 		if slices.Compare(version, floor) < 0 {
 			continue
 		}
-		label := e.Version + " " + e.Name
+		// Quoted: the provider writes the name, and it reaches terminals and CI logs, where a bare newline starts a command.
+		label := fmt.Sprintf("%s %q", e.Version, e.Name)
 		values, valuesErr := e.measurements(label)
 		if valuesErr != nil {
 			return nil, valuesErr
