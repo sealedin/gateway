@@ -1,6 +1,6 @@
 # Chutes upstream policy, baked into the measured egress image: changing any value here is a governance change (new
 # digest, new RTMR3), never a per-operator knob.
-# Measurements last synced on 2026-10-27 from api.chutes.ai/servers/tee/measurements (make sync-measurements).
+# Measurements last synced on 2026-11-05 from api.chutes.ai/servers/tee/measurements (make sync-measurements).
 # First captured on 2026-10-27 from the evidence of every TEE chute in the live catalog (140 instances across 10
 # chutes); provenance and the refresh procedure are in internal/teeverify/testdata/chutes/README.md; sek8s publishes
 # the inputs to reproduce them (chutesai/sek8s).
@@ -17,15 +17,25 @@ tdx:
   # RTMR0: firmware configuration, ACPI and SMBIOS tables, so one value per host platform class.
   rtmr0:
     - 052183ad6cca5ad4aef7e31dc3f6c47be2ba90c288a55420bf432301374f1bd9932ea7d6b5da999c4fecf578c4b0a21a
+    - 0e53740f96063640ec986e9f95a2cb601bd686c34229882a05fe7a4350d78735fc3dc2439b6052665ef888e38a292076
+    - 0e990b232dc6df68c5208dac9eb23f777950b7b9ce638b8299dd44ba97902cbcc035c97b704cb28a23643771f8438cbc
     - 212d8284fe29a52a033cd662763e452915d2002bcc3c3e73aa660b100087bd3cce8aef414c3d7012f6a857f392c1919b
+    - 34c932b17fa65b230d848ad0ca6b8186dc347b129f926f968f6b607dae07e1968177684d209a1830d37b5d0486c97618
     - 44efeea3a647090c2969cca7f29963dde696d99542c28536a20ad3586a639ef7e230d8d4e325c55f3597dc7b58b30903
     - 5b509103a3bf3c10dbf27a7da030a3d7ba93a81c0c8844de20e5dfee77611644a39cc7236313e9d0a99a8a8a703bbfc9
+    - 5e939a6213a6751f162617c6e9a50461786b3f9a6a679ebf7706fa705e7934180825b2fae43a60877ea9117a1e4d4f60
     - 7e76988fae31dda82f0043b331d908f0716e9da24fed80b6ea6cec9b6615ff84f24321056a8befbea3fff67bd1e59205
+    - 7f95b8e70d1ade7473dcaf3344abe6ffdb303a1156a69b80ab5af7cac4804709a31e1803f858449b36676150f40b79ff
+    - 8bf87f63caf5265365315fcdeea36e791c6d16216898aa313a1f4ac6fb0181adef223b2b62ad94914b06e0066ceb4751
     - a5488b5f4cf1484da23001e013a5ad3ff177836bf2cfdbde55dacded21b3eece5de43d4c4a2d5279f8ed8d24b9e072d6
     - a9cac743d296a96c7a0d6348f03be1e1a407f18ec215f0039e3dc1ea4c132eb1e4a5fe3783022ff3d252d4b30f1dbf9f
+    - b60b5c5817c762e3297ccec4e6a49289781fc5511738230bbc88e253e120635526b6082f8f4f6c31a2b3821d30a8b221
     - b72208e4b39593a82bbdbc394569bd6f8395f76bdcff5bce2bc72f4e2ca0b3202238d3b78952b497d725e04999e45435
     - ba81dbf034d968fd4be0975c031cbe6451295d63cb509cd857372fc915dada1b24fc4e1b0486db4a276a9efb49d415e6
     - bacb4abf7b19aba4a8307ebc7244706745de4fa627e669e7f06fd35c3303eea1903f58dc143d27b557da1a986e0e95f6
+    - bfaaf9a018fb3f10518b2706731ed010bc7d75f3ea3eabcc562ce4a794ab4ee88eba199e38f9013e96e1099a1cf7c49e
+    - c2857dd69249c2f976ad070359b7bebc828c9d39a899bebc1fc9077072d97c6137f626b9ce7280fff0aa7e68481f16c6
+    - e7bfc6f65f062f9aeaa6882c8a78cc7b134ac633992ad5cd1f66a5e2f543b4dc331e3d254bbcc9a29a61a9f971c27807
     - e861504d4a05ba1e949618ef759d6fbf0c69e4774b667e9fb876b664cb1bb70e3094d2cddc9ac6c52d4b5d352ba2e1d3
     - fc71a5a8edcb1f6d307d59e62ce257365df0f233ae2334691f99d2136832d911f8be975b92f88036db8a4906574519c4
   # RTMR1-3 as one tuple per sek8s guest image build: kernel and initramfs, command line, measured root filesystem.
