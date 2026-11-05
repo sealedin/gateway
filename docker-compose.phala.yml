@@ -65,6 +65,7 @@ services:
   # Attested egress: the gateway's upstream for TEE models. It verifies each Chutes instance against the policy baked
   # into its image and forwards end-to-end encrypted to the attested instance key; never published.
   egress:
+    # STALE DIGEST: built before the signed quote field fix and the RTMR0 sync; rebuild, pin, remove this line.
     image: ghcr.io/sealedin/gateway-egress@sha256:e8ab141a44d0a41f0dce725057672f63433c37047252eb5e0f47d48a2a39da84
     environment:
       CHUTES_API_KEY: ${CHUTES_API_KEY:?set CHUTES_API_KEY in the env file}
