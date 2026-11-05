@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"strconv"
+	"time"
 )
 
 const (
@@ -112,13 +113,17 @@ func (f requestFields) forceUsage() error {
 
 // relayWithUsage passes SSE through and guarantees it ends with a usage chunk, all that meters with LiteLLM's counter off. A cut
 // stream ends like a length limit, with estimated usage; one failing after its usage ends cleanly, as LiteLLM books nothing aborted.
-func relayWithUsage(w io.Writer, body io.Reader, model string, promptBytes int, log *slog.Logger) {
+func relayWithUsage(w io.Writer, body io.Reader, model string, promptBytes int, log *slog.Logger, call *callLine) {
 	meter := &streamMeter{}
+	defer func() { call.call.CompletionTokens = meter.completionTokens }()
 	reader := bufio.NewReader(body)
 	atBoundary := true
 	var failure error
 	for {
 		line, err := reader.ReadBytes('\n')
+		if len(line) > 0 && call.call.FirstByte.IsZero() {
+			call.call.FirstByte = time.Now()
+		}
 		trimmed := bytes.TrimSpace(line)
 		if string(trimmed) == doneLine {
 			break
@@ -130,11 +135,13 @@ func relayWithUsage(w io.Writer, body io.Reader, model string, promptBytes int, 
 		meter.observe(line)
 		atBoundary = len(trimmed) == 0
 		if _, writeErr := w.Write(line); writeErr != nil {
+			call.status = statusClientGone
 			log.Warn("egress: gateway gone mid-stream", "model", model, "err", writeErr)
 			return
 		}
 	}
 	if errors.Is(failure, context.Canceled) {
+		call.status = statusClientGone
 		log.Warn("egress: gateway gone mid-stream", "model", model, "err", failure)
 		return
 	}
@@ -143,22 +150,29 @@ func relayWithUsage(w io.Writer, body io.Reader, model string, promptBytes int, 
 		tail.WriteByte('\n')
 	}
 	if !meter.usageSeen {
+		call.status = "stream_cut"
+		if failure == nil {
+			call.status = "no_usage"
+		}
 		log.Error("egress: stream ended with no usage, billing an estimate", "model", model, "err", failure)
 		tail.Write(meter.finalChunk(model, promptBytes))
 	} else if failure != nil && !errors.Is(failure, io.EOF) {
+		call.status = "stream_cut_after_usage"
 		log.Warn("egress: stream failed after its usage", "model", model, "err", failure)
 	}
 	fmt.Fprintf(&tail, "%s\n\n", doneLine)
 	if _, err := w.Write(tail.Bytes()); err != nil {
+		call.status = statusClientGone
 		log.Warn("egress: gateway gone mid-stream", "model", model, "err", err)
 	}
 }
 
 // streamMeter reads only lengths and the presence of usage, never keeping any content.
 type streamMeter struct {
-	usageSeen bool
-	chunks    int
-	bytes     int
+	usageSeen        bool
+	chunks           int
+	bytes            int
+	completionTokens *int
 }
 
 func (m *streamMeter) observe(line []byte) {
@@ -186,6 +200,12 @@ func (m *streamMeter) observe(line []byte) {
 	}
 	if len(event.Usage) > 0 && string(event.Usage) != jsonNull {
 		m.usageSeen = true
+		var usage struct {
+			CompletionTokens *int `json:"completion_tokens"`
+		}
+		if json.Unmarshal(event.Usage, &usage) == nil && usage.CompletionTokens != nil {
+			m.completionTokens = usage.CompletionTokens
+		}
 	}
 	for _, choice := range event.Choices {
 		delta := choice.Delta

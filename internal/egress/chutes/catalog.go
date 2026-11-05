@@ -4,10 +4,12 @@ package chutes
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -109,8 +111,10 @@ func (c *Catalog) refresh(ctx context.Context) (map[string]catalogEntry, error) 
 	return entries, nil
 }
 
-func get(ctx context.Context, client *http.Client, url, apiKey string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
+func get(ctx context.Context, client *http.Client, target, apiKey string) ([]byte, error) {
+	// Errors reach the log and the caller, and the query of an evidence URL is the attestation nonce.
+	path, _, _ := strings.Cut(target, "?")
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, http.NoBody)
 	if err != nil {
 		return nil, err
 	}
@@ -119,6 +123,9 @@ func get(ctx context.Context, client *http.Client, url, apiKey string) ([]byte, 
 	}
 	resp, err := client.Do(req)
 	if err != nil {
+		if failure, isURL := errors.AsType[*url.Error](err); isURL {
+			return nil, fmt.Errorf("GET %s: %w", path, failure.Err)
+		}
 		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -127,10 +134,10 @@ func get(ctx context.Context, client *http.Client, url, apiKey string) ([]byte, 
 		return nil, err
 	}
 	if len(body) > maxBody {
-		return nil, fmt.Errorf("GET %s: response exceeds %d bytes", url, maxBody)
+		return nil, fmt.Errorf("GET %s: response exceeds %d bytes", path, maxBody)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GET %s: HTTP %d", url, resp.StatusCode)
+		return nil, fmt.Errorf("GET %s: HTTP %d", path, resp.StatusCode)
 	}
 	return body, nil
 }

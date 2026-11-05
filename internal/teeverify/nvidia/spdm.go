@@ -181,8 +181,7 @@ func verifySPDM(raw []byte, nonce [nonceSize]byte, key *ecdsa.PublicKey) ([]byte
 		return nil, fmt.Errorf("%w: request is not SPDM 1.1 GET_MEASUREMENTS", ErrBadEvidence)
 	}
 	if !equal(raw[requestNonceOffset:requestNonceOffset+nonceSize], nonce[:]) {
-		return nil, fmt.Errorf("nvidia: requester nonce %s does not match the expected nonce",
-			hex.EncodeToString(raw[requestNonceOffset:requestNonceOffset+nonceSize]))
+		return nil, errors.New("nvidia: requester nonce does not match the expected nonce")
 	}
 	resp := raw[getMeasurementsLen:]
 	if resp[0] != spdmVersion11 || resp[1] != spdmMeasurements {

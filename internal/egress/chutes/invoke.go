@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/sealedin/gateway/internal/egress/upstream"
 )
@@ -35,38 +36,27 @@ func NewProvider(api, apiKey string, client *http.Client, catalog *Catalog, atte
 }
 
 // Invoke sends body to an attested instance chosen per request and returns the decrypted reply.
-func (p *Provider) Invoke(ctx context.Context, model, path string, stream bool, body []byte) (*upstream.Reply, error) {
+func (p *Provider) Invoke(ctx context.Context, model, path string, stream bool, body []byte,
+	call *upstream.Call) (*upstream.Reply, error) {
 	chuteID, err := p.catalog.Resolve(ctx, model)
 	if err != nil {
 		return nil, err
 	}
+	call.Chute = chuteID
+	attestStart := time.Now()
 	target, err := p.attester.Take(ctx, chuteID)
+	call.AttestWait = time.Since(attestStart)
 	if err != nil {
 		return nil, err
 	}
+	call.Instance = target.InstanceID
 	blob, session, err := EncryptRequest(target.Pubkey, body)
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.api+invokePath, bytes.NewReader(blob))
+	resp, err := p.send(ctx, target, path, stream, blob, call)
 	if err != nil {
-		return nil, fmt.Errorf("chutes: invoke request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+p.apiKey)
-	req.Header.Set("Content-Type", "application/octet-stream")
-	req.Header.Set("X-Chute-Id", target.ChuteID)
-	req.Header.Set("X-Instance-Id", target.InstanceID)
-	req.Header.Set("X-E2e-Nonce", target.Nonce)
-	req.Header.Set("X-E2e-Stream", strconv.FormatBool(stream))
-	req.Header.Set("X-E2e-Path", path)
-	resp, err := p.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("chutes: invoke: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		defer func() { _ = resp.Body.Close() }()
-		detail, _ := io.ReadAll(io.LimitReader(resp.Body, maxLine))
-		return nil, &upstream.Error{Status: resp.StatusCode, Detail: strings.TrimSpace(string(detail))}
+		return nil, err
 	}
 	if stream {
 		return &upstream.Reply{ContentType: "text/event-stream", Body: decryptStream(resp.Body, session)}, nil
@@ -83,7 +73,63 @@ func (p *Provider) Invoke(ctx context.Context, model, path string, stream bool, 
 	if err != nil {
 		return nil, err
 	}
+	call.CompletionTokens = completionTokens(plain)
 	return &upstream.Reply{ContentType: "application/json", Body: io.NopCloser(bytes.NewReader(plain))}, nil
+}
+
+// send posts the encrypted request to the target and turns any status but 200 into a refusal.
+func (p *Provider) send(ctx context.Context, target Target, path string, stream bool, blob []byte,
+	call *upstream.Call) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.api+invokePath, bytes.NewReader(blob))
+	if err != nil {
+		return nil, fmt.Errorf("chutes: invoke request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+p.apiKey)
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.Header.Set("X-Chute-Id", target.ChuteID)
+	req.Header.Set("X-Instance-Id", target.InstanceID)
+	req.Header.Set("X-E2e-Nonce", target.Nonce)
+	req.Header.Set("X-E2e-Stream", strconv.FormatBool(stream))
+	req.Header.Set("X-E2e-Path", path)
+	call.Sent = time.Now()
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("chutes: invoke: %w", err)
+	}
+	if !stream {
+		call.FirstByte = time.Now()
+	}
+	if resp.StatusCode != http.StatusOK {
+		defer func() { _ = resp.Body.Close() }()
+		detail, _ := io.ReadAll(io.LimitReader(resp.Body, maxLine))
+		return nil, &upstream.Error{Status: resp.StatusCode, Detail: refusalDetail(detail)}
+	}
+	return resp, nil
+}
+
+// refusalDetail names the refusals an operator acts on and withholds the rest: an instance may quote the prompt.
+func refusalDetail(raw []byte) string {
+	switch {
+	case bytes.Contains(raw, []byte("maximum capacity")):
+		return "instance at maximum capacity"
+	case bytes.Contains(raw, []byte("already-used nonce")):
+		return "invocation token refused"
+	default:
+		return fmt.Sprintf("withheld, %d bytes", len(raw))
+	}
+}
+
+// completionTokens reads only the count; a reply without one logs without one.
+func completionTokens(reply []byte) *int {
+	var parsed struct {
+		Usage struct {
+			CompletionTokens *int `json:"completion_tokens"`
+		} `json:"usage"`
+	}
+	if json.Unmarshal(reply, &parsed) != nil {
+		return nil
+	}
+	return parsed.Usage.CompletionTokens
 }
 
 // decryptStream turns the encrypted SSE (e2e_init, then e2e frames wrapping the upstream's own SSE) into plain SSE. A
@@ -173,7 +219,8 @@ func (st *streamState) relay(event map[string]json.RawMessage, w io.Writer) (boo
 		_, err = w.Write(plain)
 		return false, err
 	case event["e2e_error"] != nil:
-		return false, fmt.Errorf("chutes: instance reported %s", string(event["e2e_error"]))
+		// Withheld from the error, which is logged: the instance holds the prompt and may quote it.
+		return false, fmt.Errorf("chutes: instance reported an error, %d bytes withheld", len(event["e2e_error"]))
 	}
 	return false, nil
 }

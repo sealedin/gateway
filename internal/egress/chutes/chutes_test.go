@@ -196,15 +196,18 @@ func TestVerifyRejects(t *testing.T) {
 		nonce   string
 		policy  func(p *chutes.Policy)
 		wantErr string
+		check   string
 	}{
-		{"nonce mismatch", func(*chutes.Evidence) {}, strings.Repeat("00", 32), nil, "attested_body nonce"},
-		{"signature flipped", func(ev *chutes.Evidence) { ev.Signature = flippedSig }, f.Nonce, nil, "signature"},
-		{"attested body edited", func(ev *chutes.Evidence) { ev.AttestedBody = editedBody }, f.Nonce, nil, "signature"},
-		{"quote swapped", func(ev *chutes.Evidence) { ev.Quote = otherQuote }, f.Nonce, nil, "quote differs"},
-		{"quote tampered", func(ev *chutes.Evidence) { ev.Quote = tamperedQuote }, f.Nonce, nil, "quote differs"},
-		{"impostor certificate", func(ev *chutes.Evidence) { *ev = impostor }, f.Nonce, nil, "REPORT_DATA[32:64]"},
-		{"unpinned measurement", func(*chutes.Evidence) {}, f.Nonce,
-			func(p *chutes.Policy) { p.TDX.MRTD = []string{strings.Repeat("00", 48)} }, "mrtd"},
+		{"nonce mismatch", func(*chutes.Evidence) {}, strings.Repeat("00", 32), nil, "attested_body nonce", "nonce"},
+		{"signature flipped", func(ev *chutes.Evidence) { ev.Signature = flippedSig }, f.Nonce, nil, "signature", "signature"},
+		{"attested body edited", func(ev *chutes.Evidence) { ev.AttestedBody = editedBody }, f.Nonce, nil, "signature", "signature"},
+		{"quote swapped", func(ev *chutes.Evidence) { ev.Quote = otherQuote }, f.Nonce, nil, "quote differs", "signed_quote"},
+		{"quote tampered", func(ev *chutes.Evidence) { ev.Quote = tamperedQuote }, f.Nonce, nil, "quote differs", "signed_quote"},
+		{"impostor certificate", func(ev *chutes.Evidence) { *ev = impostor }, f.Nonce, nil, "REPORT_DATA[32:64]", "tls_key_binding"},
+		{"unpinned mrtd", func(*chutes.Evidence) {}, f.Nonce,
+			func(p *chutes.Policy) { p.TDX.MRTD = []string{strings.Repeat("00", 48)} }, "mrtd", "tdx_policy"},
+		{"unpinned rtmr0", func(*chutes.Evidence) {}, f.Nonce,
+			func(p *chutes.Policy) { p.TDX.RTMR0 = []string{strings.Repeat("00", 48)} }, "rtmr0", "tdx_policy"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -218,8 +221,88 @@ func TestVerifyRejects(t *testing.T) {
 			tt.mutate(&ev)
 			_, err := v.Verify(context.Background(), ev, tt.nonce, "unknown-key")
 			require.ErrorContains(t, err, tt.wantErr)
+			var failed *chutes.CheckError
+			require.ErrorAs(t, err, &failed)
+			require.Equal(t, tt.check, failed.Check)
 		})
 	}
+}
+
+// The value received never reaches the rejection entry: the check name says enough.
+func TestRejectionNamesNoReceivedNonce(t *testing.T) {
+	f := loadFixture(t, "blackwell")
+	var ok atomic.Int32
+	ok.Store(http.StatusOK)
+	_, err := fixtureVerifier(t, "blackwell", &ok).Verify(context.Background(), f.Evidence, strings.Repeat("00", 32), "unknown-key")
+	require.ErrorContains(t, err, "attested_body nonce")
+	require.NotContains(t, err.Error(), f.Nonce)
+}
+
+// Each later step names itself too, and the attester's entry says which step refused the instance.
+func TestRejectedInstanceEntryNamesTheCheck(t *testing.T) {
+	var logs strings.Builder
+	api := &fakeAPI{instances: `{"instances":[{"instance_id":"a","e2e_pubkey":"pk","nonces":["n1"]}],"nonce_expires_in":60}`,
+		evidence: `{"evidence":[{"instance_id":"a"}]}`}
+	att, err := chutes.NewAttester("https://api.test", "cpk_test", http.DefaultClient, rejectingVerifier{}, time.Minute,
+		slog.New(slog.NewTextHandler(&logs, nil)))
+	require.NoError(t, err)
+	chutes.SetGetter(att, api.get)
+	_, err = att.Take(context.Background(), "chute-1")
+	require.ErrorIs(t, err, upstream.ErrNoAttestedInstance)
+	require.Contains(t, logs.String(), "check=dcap")
+	require.Contains(t, logs.String(), "instance=a")
+}
+
+type rejectingVerifier struct{}
+
+func (rejectingVerifier) Verify(context.Context, chutes.Evidence, string, string) (*chutes.Verified, error) {
+	return nil, &chutes.CheckError{Check: "dcap", Err: errors.New("collateral expired")}
+}
+
+func TestVerifyNamesTheLaterChecks(t *testing.T) {
+	f := loadFixture(t, "blackwell")
+	report, err := tdx.Parse(mustDecode(t, f.Evidence.Quote))
+	require.NoError(t, err)
+	check := func(t *testing.T, v *chutes.Verifier, pubkey, want string) {
+		t.Helper()
+		_, verifyErr := v.Verify(context.Background(), f.Evidence, f.Nonce, pubkey)
+		var failed *chutes.CheckError
+		require.ErrorAs(t, verifyErr, &failed)
+		require.Equal(t, want, failed.Check)
+	}
+	v := &chutes.Verifier{TDX: failingQuote{}, Policy: measuredPolicy(t), Now: captureTime}
+	t.Run("dcap", func(t *testing.T) { check(t, v, "k", "dcap") })
+	v = &chutes.Verifier{TDX: stubQuote{report}, Policy: measuredPolicy(t), Now: captureTime}
+	t.Run("e2e key binding", func(t *testing.T) { check(t, v, "not-the-bound-key", "e2e_key_binding") })
+	want := sha256.Sum256([]byte(f.Nonce + "bound-key"))
+	copy(report.ReportData[:32], want[:])
+	v = &chutes.Verifier{TDX: stubQuote{report}, GPU: failingGPU{}, Policy: measuredPolicy(t), Now: captureTime}
+	t.Run("gpu", func(t *testing.T) { check(t, v, "bound-key", "gpu") })
+}
+
+type failingGPU struct{}
+
+func (failingGPU) Verify(context.Context, []nvidia.Evidence, [32]byte) (*nvidia.Verdict, error) {
+	return nil, errors.New("verdict failed")
+}
+
+func TestVerifyNamesAMalformedQuote(t *testing.T) {
+	f := loadFixture(t, "blackwell")
+	ev := f.Evidence
+	ev.Quote = "not base64!"
+	ev = signedBody(t, ev, map[string]string{"quote": ev.Quote})
+	var ok atomic.Int32
+	ok.Store(http.StatusOK)
+	_, err := fixtureVerifier(t, "blackwell", &ok).Verify(context.Background(), ev, f.Nonce, "k")
+	var failedCheck *chutes.CheckError
+	require.ErrorAs(t, err, &failedCheck)
+	require.Equal(t, "quote_format", failedCheck.Check)
+}
+
+type failingQuote struct{}
+
+func (failingQuote) Verify(context.Context, []byte) (*tdx.Report, error) {
+	return nil, errors.New("collateral expired")
 }
 
 func TestCheckGPUsRejects(t *testing.T) {
@@ -454,6 +537,9 @@ func TestVerifyRejectsUnsignedGPUEvidence(t *testing.T) {
 	_, err := fixtureVerifier(t, "blackwell", &ok).Verify(context.Background(), ev, f.Nonce, "unknown-key")
 	require.ErrorIs(t, err, chutes.ErrBinding)
 	require.ErrorContains(t, err, "gpu evidence differs")
+	var failedCheck *chutes.CheckError
+	require.ErrorAs(t, err, &failedCheck)
+	require.Equal(t, "signed_gpu_evidence", failedCheck.Check)
 }
 
 type stubQuote struct{ report *tdx.Report }

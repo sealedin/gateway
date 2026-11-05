@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 )
 
 var (
@@ -23,6 +24,15 @@ type Reply struct {
 	Body        io.ReadCloser
 }
 
+// Call is what one upstream call reports for its log line: routing and timing, never content, keys or nonces.
+type Call struct {
+	Chute, Instance  string
+	AttestWait       time.Duration
+	Sent             time.Time // when the request left; zero if it never did
+	FirstByte        time.Time // a reply's headers; for a stream, set by whoever reads the first decrypted chunk
+	CompletionTokens *int      // nil until the upstream reports it
+}
+
 // Error carries a provider API refusal through to the client with its status.
 type Error struct {
 	Status int
@@ -31,7 +41,8 @@ type Error struct {
 
 func (e *Error) Error() string { return fmt.Sprintf("upstream: HTTP %d: %s", e.Status, e.Detail) }
 
-// Provider forwards an OpenAI-compatible request for model to an attested instance.
+// Provider forwards an OpenAI-compatible request for model to an attested instance, filling call as it goes. Every
+// error from Invoke and from reading a Reply's Body is logged, so none may carry content, keys or nonces.
 type Provider interface {
-	Invoke(ctx context.Context, model, path string, stream bool, body []byte) (*Reply, error)
+	Invoke(ctx context.Context, model, path string, stream bool, body []byte, call *Call) (*Reply, error)
 }

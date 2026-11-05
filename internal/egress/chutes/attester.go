@@ -207,7 +207,11 @@ func (a *Attester) attest(ctx context.Context, state *chuteState, chuteID string
 			defer func() { <-slots }()
 			verified, verifyErr := a.verifier.Verify(ctx, ev, nonce, stale[ev.InstanceID])
 			if verifyErr != nil {
-				a.log.Warn("chutes: instance rejected", "chute", chuteID, "instance", ev.InstanceID, "err", verifyErr)
+				check := "unknown"
+				if refused, named := errors.AsType[*CheckError](verifyErr); named {
+					check = refused.Check
+				}
+				a.log.Warn("chutes: instance rejected", "chute", chuteID, "instance", ev.InstanceID, "check", check, "err", verifyErr)
 				return
 			}
 			mu.Lock()

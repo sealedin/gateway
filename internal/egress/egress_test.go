@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -78,6 +79,7 @@ var allowAll = map[string]int{"org/m-TEE": 1000, "m": 1000} //nolint:gochecknogl
 type stubUpstream struct {
 	reply *upstream.Reply
 	err   error
+	call  upstream.Call
 	seen  struct {
 		model, path string
 		stream      bool
@@ -85,7 +87,10 @@ type stubUpstream struct {
 	}
 }
 
-func (s *stubUpstream) Invoke(_ context.Context, model, path string, stream bool, body []byte) (*upstream.Reply, error) {
+func (s *stubUpstream) Invoke(_ context.Context, model, path string, stream bool, body []byte,
+	call *upstream.Call) (*upstream.Reply, error) {
+	*call = s.call
+	call.Sent = time.Now()
 	s.seen.model, s.seen.path, s.seen.stream, s.seen.body = model, path, stream, string(body)
 	return s.reply, s.err
 }
@@ -334,7 +339,7 @@ func TestMuxRefusesABadOutputLimit(t *testing.T) {
 
 type upstreamFunc func()
 
-func (f upstreamFunc) Invoke(context.Context, string, string, bool, []byte) (*upstream.Reply, error) {
+func (f upstreamFunc) Invoke(context.Context, string, string, bool, []byte, *upstream.Call) (*upstream.Reply, error) {
 	f()
 	return nil, errors.New("released")
 }
@@ -383,4 +388,147 @@ func TestMuxLogsSaturationAtErrorLevel(t *testing.T) {
 	require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 	require.Contains(t, logs.String(), "level=ERROR")
 	require.Contains(t, logs.String(), "at capacity")
+}
+
+// callLine serves one request and returns the log, which must hold exactly one call line.
+func callLine(t *testing.T, up upstream.Provider, body string) string {
+	t.Helper()
+	var logs syncBuffer
+	rec := httptest.NewRecorder()
+	egress.NewMux(up, allowAll, slog.New(slog.NewTextHandler(&logs, nil))).ServeHTTP(rec,
+		httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body)))
+	return oneCallLine(t, logs.String())
+}
+
+func oneCallLine(t *testing.T, logs string) string {
+	t.Helper()
+	var lines []string
+	for line := range strings.SplitSeq(logs, "\n") {
+		if strings.Contains(line, `msg="egress: upstream call"`) {
+			lines = append(lines, line)
+		}
+	}
+	require.Len(t, lines, 1, logs)
+	return lines[0]
+}
+
+const streamBody, plainBody = `{"model":"m","stream":true}`, `{"model":"m"}`
+
+// errReader yields text and then fails, as a decrypted stream does when the upstream cuts it.
+func errReader(text string, err error) io.Reader {
+	return io.MultiReader(strings.NewReader(text), iotest.ErrReader(err))
+}
+
+func TestCallLineStatus(t *testing.T) {
+	chunk := "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n"
+	usage := `data: {"choices":[],"usage":{"completion_tokens":7}}` + "\n\n"
+	cut := errors.New("chutes: stream ended without [DONE]")
+	streaming := func(r io.Reader) *upstream.Reply {
+		return &upstream.Reply{ContentType: "text/event-stream", Body: io.NopCloser(r)}
+	}
+	tests := []struct {
+		name, body string
+		up         *stubUpstream
+		want       []string
+		absent     []string
+	}{
+		{"complete stream", streamBody, &stubUpstream{reply: streaming(strings.NewReader(chunk + usage + "data: [DONE]\n\n"))},
+			[]string{"status=200", "stream=true", "completion_tokens=7", "first_byte_ms="}, nil},
+		{"cut before usage", streamBody, &stubUpstream{reply: streaming(errReader(chunk, cut))},
+			[]string{"status=stream_cut ", "first_byte_ms="}, []string{"completion_tokens"}},
+		{"cut before the first chunk", streamBody, &stubUpstream{reply: streaming(errReader("", cut))},
+			[]string{"status=stream_cut "}, []string{"first_byte_ms", "completion_tokens"}},
+		{"cut after usage", streamBody, &stubUpstream{reply: streaming(errReader(chunk+usage, cut))},
+			[]string{"status=stream_cut_after_usage", "completion_tokens=7"}, nil},
+		{"ended cleanly with no usage", streamBody, &stubUpstream{reply: streaming(strings.NewReader(chunk + "data: [DONE]\n\n"))},
+			[]string{"status=no_usage"}, []string{"completion_tokens"}},
+		{"gateway gone while reading", streamBody, &stubUpstream{reply: streaming(errReader(chunk, context.Canceled))},
+			[]string{"status=client_gone"}, nil},
+		{"complete reply", plainBody, &stubUpstream{
+			reply: &upstream.Reply{ContentType: "application/json", Body: io.NopCloser(strings.NewReader(`{}`))},
+			call:  upstream.Call{Chute: "c", Instance: "i", AttestWait: 2 * time.Second},
+		}, []string{"status=200", "stream=false", "chute=c", "instance=i", "attest_wait_ms=2000", "total_ms=", "model=m"}, nil},
+		{"upstream refusal", plainBody, &stubUpstream{err: &upstream.Error{Status: http.StatusTooManyRequests}},
+			[]string{"status=429"}, nil},
+		{"no attested instance", plainBody, &stubUpstream{err: upstream.ErrNoAttestedInstance},
+			[]string{"status=no_attested_instance"}, nil},
+		{"unknown upstream model", plainBody, &stubUpstream{err: upstream.ErrUnknownModel}, []string{"status=unknown_model"}, nil},
+		{"not confidential", plainBody, &stubUpstream{err: upstream.ErrNotConfidential}, []string{"status=not_confidential"}, nil},
+		{"gateway gone before the reply", plainBody, &stubUpstream{err: fmt.Errorf("chutes: invoke: %w", context.Canceled)},
+			[]string{"status=client_gone"}, nil},
+		{"other failure", plainBody, &stubUpstream{err: errors.New("boom")}, []string{"status=upstream_error"}, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			line := callLine(t, tt.up, tt.body)
+			for _, want := range tt.want {
+				require.Contains(t, line, want)
+			}
+			for _, absent := range tt.absent {
+				require.NotContains(t, line, absent)
+			}
+		})
+	}
+}
+
+// A request refused before any upstream call is no upstream call.
+func TestNoCallLineWithoutAnUpstreamCall(t *testing.T) {
+	var logs syncBuffer
+	rec := httptest.NewRecorder()
+	egress.NewMux(&stubUpstream{}, allowAll, slog.New(slog.NewTextHandler(&logs, nil))).ServeHTTP(rec,
+		httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"org/not-measured"}`)))
+	require.Equal(t, http.StatusNotFound, rec.Code)
+	require.NotContains(t, logs.String(), "upstream call")
+}
+
+type failingWriter struct{ header http.Header }
+
+func (f failingWriter) Header() http.Header { return f.header }
+
+func (failingWriter) WriteHeader(int) {}
+
+func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("broken pipe") }
+
+// A write failure aborts the connection by panicking; the line must get out on the way.
+func TestCallLineSurvivesAnAbortedReply(t *testing.T) {
+	var logs syncBuffer
+	up := &stubUpstream{reply: &upstream.Reply{ContentType: "application/json", Body: io.NopCloser(strings.NewReader(`{}`))}}
+	mux := egress.NewMux(up, allowAll, slog.New(slog.NewTextHandler(&logs, nil)))
+	require.PanicsWithValue(t, http.ErrAbortHandler, func() {
+		mux.ServeHTTP(failingWriter{http.Header{}},
+			httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(plainBody)))
+	})
+	require.Contains(t, oneCallLine(t, logs.String()), "status=client_gone")
+}
+
+// A hang-up seen through the mux; the real provider's own path is pinned in the chutes tests.
+func TestCallLineWhenTheClientHangsUpMidStream(t *testing.T) {
+	var logs syncBuffer
+	pr, pw := io.Pipe()
+	up := hangUpUpstream{pr: pr, pw: pw}
+	srv := httptest.NewServer(egress.NewMux(up, allowAll, slog.New(slog.NewTextHandler(&logs, nil))))
+	defer srv.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, srv.URL+"/v1/chat/completions", strings.NewReader(streamBody))
+	require.NoError(t, err)
+	resp, err := srv.Client().Do(req)
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	_, err = io.ReadFull(resp.Body, make([]byte, 6))
+	require.NoError(t, err)
+	cancel()
+	require.Eventually(t, func() bool { return strings.Contains(logs.String(), "upstream call") }, 5*time.Second, 10*time.Millisecond)
+	require.Contains(t, oneCallLine(t, logs.String()), "status=client_gone")
+}
+
+type hangUpUpstream struct {
+	pr *io.PipeReader
+	pw *io.PipeWriter
+}
+
+func (h hangUpUpstream) Invoke(ctx context.Context, _, _ string, _ bool, _ []byte, _ *upstream.Call) (*upstream.Reply, error) {
+	context.AfterFunc(ctx, func() { _ = h.pw.CloseWithError(ctx.Err()) })
+	go func() { _, _ = io.WriteString(h.pw, "data: {}\n\n") }()
+	return &upstream.Reply{ContentType: "text/event-stream", Body: h.pr}, nil
 }

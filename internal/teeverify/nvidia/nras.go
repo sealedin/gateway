@@ -119,7 +119,7 @@ func ParseVerdict(raw, jwks []byte, nonce [nonceSize]byte, gpus int, now time.Ti
 	}
 	want := hex.EncodeToString(nonce[:])
 	if !equal([]byte(overall.str(claimNonce)), []byte(want)) {
-		return nil, fmt.Errorf("nvidia: NRAS verdict nonce %q does not match the expected nonce", overall.str(claimNonce))
+		return nil, errors.New("nvidia: NRAS verdict nonce does not match the expected nonce")
 	}
 	digests, err := submodDigests(overall[claimSubmods])
 	if err != nil {
@@ -140,7 +140,7 @@ func ParseVerdict(raw, jwks []byte, nonce [nonceSize]byte, gpus int, now time.Ti
 			return nil, fmt.Errorf("nvidia: %s verdict: %w", id, gpuErr)
 		}
 		if !equal([]byte(gpu.str(claimNonce)), []byte(want)) {
-			return nil, fmt.Errorf("nvidia: %s verdict nonce %q does not match the expected nonce", id, gpu.str(claimNonce))
+			return nil, fmt.Errorf("nvidia: %s verdict nonce does not match the expected nonce", id)
 		}
 		if exp := time.Unix(gpu.unix(claimExpiresAt), 0); exp.Before(v.ExpiresAt) {
 			v.ExpiresAt = exp
