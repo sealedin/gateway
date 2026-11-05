@@ -16,30 +16,36 @@ jobs:
     env:
       GOTOOLCHAIN: local
     steps:
+      # No stored credentials and no cache: only the last step holds the token, and nothing built here runs after it.
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
       - run: make build-sync-measurements
       # The binary itself, not make: make maps every failure to 2 and the exit code says which failure this is.
       - name: Sync the policy
         run: |
           code=0
-          ./build/sync-measurements || code=$?
+          ./build/sync-measurements > "$RUNNER_TEMP/added.txt" || code=$?
+          cat "$RUNNER_TEMP/added.txt"
           case "$code" in
             0) ;;
             3) echo "::error::Chutes lists a new guest image (RTMR1-3). Nothing changed. Review it and pin it by hand; see the log."; exit 1 ;;
             *) echo "::error::Sync refused: a new MRTD, or the list could not be read. Nothing changed; see the log."; exit 1 ;;
           esac
-      # The branch is named after the result, so a rerun with the same list pushes nothing and never force-pushes.
+      # A PR made with this token starts no other workflow, so ci.yml will not check it.
+      - run: go test ./internal/egress/... ./internal/measurements/...
+      # The branch is named after the added values, not the file, whose date moves: a closed PR stays closed.
       - name: Open a pull request
         env:
           GH_TOKEN: ${{ github.token }}
-          BASE: ${{ github.event.repository.default_branch }}
         run: |
           git diff --quiet -- egress/policy.yaml && exit 0
-          branch="sync-measurements/$(sha256sum egress/policy.yaml | cut -c1-12)"
+          branch="sync-measurements/$(git diff -U0 -- egress/policy.yaml | grep -E '^\+ +- ' | sha256sum | cut -c1-12)"
+          gh auth setup-git
           if ! git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
             grep -q 'STALE DIGEST' docker-compose.phala.yml || sed -i \
               '/gateway-egress@sha256:/i\    # STALE DIGEST: the policy changed after this build; rebuild, pin, remove this line.' docker-compose.phala.yml
@@ -49,6 +55,12 @@ jobs:
             git push origin "$branch"
           fi
           if [ -z "$(gh pr list --state all --head "$branch" --json number --jq '.[].number')" ]; then
-            gh pr create --base "$BASE" --head "$branch" --title "Pin new RTMR0 values from the Chutes measurement list" \
-              --body "From \`sync-measurements\`. Merging changes the measured egress image: rebuild it and pin the new digest before deploying."
+            {
+              echo 'These values are the provider'\''s own claim, and the policy accepts RTMR0 on every pinned image. Before merging, check each against evidence from a live instance or the sek8s inputs. Merging changes the measured egress image: rebuild it and pin the new digest before deploying.'
+              echo
+              echo '```'
+              cat "$RUNNER_TEMP/added.txt"
+              echo '```'
+            } > "$RUNNER_TEMP/body.md"
+            gh pr create --head "$branch" --title "Pin new RTMR0 values from the Chutes measurement list" --body-file "$RUNNER_TEMP/body.md"
           fi

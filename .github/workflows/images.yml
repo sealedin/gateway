@@ -75,4 +75,8 @@ jobs:
       - run: |
           code=0
           ./build/sync-measurements --check || code=$?
-          [ "$code" = 0 ] || echo "::warning::egress/policy.yaml differs from the Chutes measurement list (exit $code); see the log."
+          case "$code" in
+            0) ;;
+            2|3) echo "::warning::egress/policy.yaml differs from the Chutes measurement list (exit $code); see the log." ;;
+            *) echo "::warning::Could not compare egress/policy.yaml with the Chutes measurement list; see the log." ;;
+          esac
