@@ -23,6 +23,13 @@ if grep -vE '^github.com/sealedin/gateway/(cmd/drain|internal/drain|internal/lim
   echo 'cmd/drain sees every prompt and reply: it must link only its own code and internal/limits' >&2
   exit 1
 fi
+# The egress verifies against its baked policy; the provider's own list must never reach it at runtime.
+check cmd/egress '/internal/measurements(/|$)' 'verifies against the measured policy: it must not depend on the sync tool'
+list_readers=$(grep -rl 'servers/tee/measurements' --include='*.go' cmd internal | grep -v '^internal/measurements/' || true)
+if [ -n "$list_readers" ]; then
+  echo "only internal/measurements may name the provider's measurement list; found: $list_readers" >&2
+  exit 1
+fi
 check internal/x402 '/internal/enclave(/|$)' 'holds the fee payer key it is handed: it must not reach the enclave key or the agent socket'
 # The operators' fee payer key: cmd/sales alone reads the variable, and internal/x402 must never derive a gateway key from it.
 readers=$(grep -rlE 'SEALEDIN_FEE_PAYER_KEY' --include='*.go' cmd internal | grep -v '_test.go$' || true)

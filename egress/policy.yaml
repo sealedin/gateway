@@ -1,7 +1,9 @@
 # Chutes upstream policy, baked into the measured egress image: changing any value here is a governance change (new
-# digest, new RTMR3), never a per-operator knob. Measurements were captured on 2026-10-27 from the evidence of every
-# TEE chute in the live catalog (140 instances across 10 chutes); provenance and the refresh procedure are in
-# internal/teeverify/testdata/chutes/README.md; sek8s publishes the inputs to reproduce them (chutesai/sek8s).
+# digest, new RTMR3), never a per-operator knob.
+# Measurements last synced on 2026-10-27 from api.chutes.ai/servers/tee/measurements (make sync-measurements).
+# First captured on 2026-10-27 from the evidence of every TEE chute in the live catalog (140 instances across 10
+# chutes); provenance and the refresh procedure are in internal/teeverify/testdata/chutes/README.md; sek8s publishes
+# the inputs to reproduce them (chutesai/sek8s).
 provider: chutes
 hosts:
   api: https://api.chutes.ai

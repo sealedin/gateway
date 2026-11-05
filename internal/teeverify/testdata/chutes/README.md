@@ -13,3 +13,5 @@ Recorded on 2026-10-27 from two public Chutes TEE chutes (see `meta.json` for id
 What `blackwell.json` and `hopper.json` do not contain: the instances' ML-KEM E2EE public keys, which `GET /e2e/instances/<chute_id>` serves only with an API key. The report_data binding to that key is therefore unit-tested on crafted inputs; refresh with a key to add a recorded positive vector.
 
 Refresh: pick a `chute_id` from `https://llm.chutes.ai/v1/models` (`confidential_compute: true`), fetch evidence with `openssl rand -hex 32` as the nonce, post the GPU evidence as an EAT (`{"arch","nonce":<report_data[0:32] hex>,"evidence_list"}`) to `https://nras.attestation.nvidia.com/v3/attest/gpu`, save the JWKS, record the collateral with a go-tdx-guest getter that dumps bodies and headers, and update `meta.json`.
+
+New RTMR0 values come from `make sync-measurements`: it reads Chutes' published list (`internal/measurements`), adds only values on a guest image the policy already pins, and refuses a new MRTD or image, which take a person's review. Exit codes: 0 current, 1 error or new MRTD, 2 changes pending under `--check`, 3 new image.
