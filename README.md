@@ -33,6 +33,8 @@ The operator's only unmeasured input is the env file (KMS-encrypted operator con
 
 **Beta root access.** Until the first 10k USD processed, the CVM runs a dstack dev image so an operator can log in and fix it: `deploy-phala.sh` defaults to `dstack-dev-0.5.12`, requires `SEALEDIN_ROOT_SSH_PUBKEY` on a dev image, refuses it on any other, and passes it as `DSTACK_ROOT_PUBLIC_KEY` and `DSTACK_AUTHORIZED_KEYS`, which image versions read differently. Connect with `phala ssh <cvm-name>`. Whoever holds that key can read every prompt, customer key and secret in the CVM. The dev image shows in the quote's guest OS measurements and the variables' names in the measured `allowed_envs`, but the key itself is not measured, so a verifier learns that root login may exist, not whose it is.
 
+**Beta call log.** For launch diagnostics the egress logs one line per upstream call (`egress: upstream call`): model, chute, instance, stream, status, timings and completion tokens, never content, keys, nonces or a client's address or key name. Its exact time and numbers can still be matched against LiteLLM's spend rows, which name a key, so the line is temporary and will be removed. `client_gone` means the egress's caller, LiteLLM, left: `cmd/drain` reads every reply to its end, so an end client hanging up logs the upstream's status.
+
 ### Step 2: verify the deployed enclave
 
 ```bash
