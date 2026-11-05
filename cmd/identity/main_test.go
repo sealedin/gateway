@@ -618,10 +618,10 @@ func TestDeployTiesTheRootKeyToTheDevImage(t *testing.T) {
 		name, image, key, want string
 	}{
 		{"default dev image without a key", "", "", "needs SEALEDIN_ROOT_SSH_PUBKEY"},
-		{"dev image without a key", "dstack-dev-0.6.1", "", "needs SEALEDIN_ROOT_SSH_PUBKEY"},
+		{"dev image without a key", "dstack-dev-0.5.12", "", "needs SEALEDIN_ROOT_SSH_PUBKEY"},
 		{"production image with a key", "dstack-0.6.1", goodKey, "has no root access"},
-		{"not a public key", "dstack-dev-0.6.1", "-----BEGIN OPENSSH PRIVATE KEY-----", "one ssh-ed25519 public key"},
-		{"a second line", "dstack-dev-0.6.1", goodKey + "\nEVIL=1", "one ssh-ed25519 public key"},
+		{"not a public key", "dstack-dev-0.5.12", "-----BEGIN OPENSSH PRIVATE KEY-----", "one ssh-ed25519 public key"},
+		{"a second line", "dstack-dev-0.5.12", goodKey + "\nEVIL=1", "one ssh-ed25519 public key"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

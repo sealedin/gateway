@@ -11,7 +11,7 @@
 #
 # Environment: SEALEDIN_EDGE_DOMAIN (required: the custom domain the edge obtains its certificate for; the DNS records
 # it needs are printed after the deploy), SEALEDIN_PHALA_INSTANCE (default tdx.medium), SEALEDIN_PHALA_IMAGE (default
-# dstack-dev-0.6.1 for the beta), SEALEDIN_ROOT_SSH_PUBKEY (the operator's emergency root login: required on a dev image,
+# dstack-dev-0.5.12 for the beta), SEALEDIN_ROOT_SSH_PUBKEY (the operator's emergency root login: required on a dev image,
 # refused on any other, and kept out of the repo), and PHALA_CLOUD_API_KEY or a prior `phala login`.
 #
 # Beta only: whoever holds that key reads every prompt and secret in the CVM. The quote shows the dev image through its
@@ -24,7 +24,7 @@ mode=${1:?$usage}
 target=${2:?$usage}
 domain=${SEALEDIN_EDGE_DOMAIN:?$usage}
 instance=${SEALEDIN_PHALA_INSTANCE:-tdx.medium}
-image=${SEALEDIN_PHALA_IMAGE:-dstack-dev-0.6.1}
+image=${SEALEDIN_PHALA_IMAGE:-dstack-dev-0.5.12}
 root_key=${SEALEDIN_ROOT_SSH_PUBKEY:-}
 compose=docker-compose.phala.yml
 if [[ $image == dstack-dev-* ]]; then
@@ -59,7 +59,7 @@ trap 'rm -f "$envfile"' EXIT
 ./scripts/env-from-keychain.sh "$envfile"
 printf 'SEALEDIN_EDGE_DOMAIN=%s\n' "$domain" >> "$envfile"
 if [[ -n $root_key ]]; then
-  printf 'DSTACK_ROOT_PUBLIC_KEY=%s\n' "$root_key" >> "$envfile"
+  printf 'DSTACK_ROOT_PUBLIC_KEY=%s\nDSTACK_AUTHORIZED_KEYS=%s\n' "$root_key" "$root_key" >> "$envfile"
 fi
 
 # Every CLI call is checked by its JSON `success`; on failure only known error fields are echoed, never the whole
