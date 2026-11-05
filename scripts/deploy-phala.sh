@@ -67,7 +67,7 @@ fi
 checked() {
   local out
   if ! out=$("$@" --json) || [ "$(printf '%s' "$out" | jq -r .success 2>/dev/null)" != "true" ]; then
-    printf '%s\n' "$out" | jq -c '{success, error, message, detail}' 2>/dev/null >&2 || echo "phala $2 failed" >&2
+    printf '%s\n' "$out" | jq -c '{success, error, message, detail}' 2>/dev/null >&2 || echo "phala $2: no JSON reply, "$out"
     exit 1
   fi
   printf '%s' "$out"

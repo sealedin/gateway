@@ -190,7 +190,7 @@ func TestMeasuredPolicy(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, f.Close()) })
 	policy, err := rpcproxy.LoadPolicy(f)
 	require.NoError(t, err)
-	require.Equal(t, "https://api.mainnet-beta.solana.com/", policy.Confirmation.URL)
+	require.Equal(t, "https://solana-rpc.publicnode.com/", policy.Confirmation.URL)
 	require.Equal(t, "https://mainnet.helius-rpc.com/", policy.Primary.URL)
 	require.Equal(t, "api-key", policy.Primary.APIKeyParam)
 	require.False(t, policy.Placeholder())
