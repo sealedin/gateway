@@ -146,17 +146,20 @@ quoted_rtmr3=$(field "$rtmr3_offset" 48)
 fold=$(printf '%096d' 0)
 count=0
 while IFS=$'\t' read -r digest event payload; do
-  [[ $digest =~ ^[0-9a-f]{96}$ ]] || { echo "FAIL: event digest is not sha384 hex" >&2; exit 1; }
+  [[ $digest == - || $digest =~ ^[0-9a-f]{96}$ ]] || { echo "FAIL: event digest is not sha384 hex" >&2; exit 1; }
   v1=$( { printf '%s' "$dstack_event_type_le" | xxd -r -p; printf ':%s:' "$event"
           printf '%s' "$payload" | xxd -r -p; } | openssl dgst -sha384 | sed 's/^.*= //')
   v2=$(printf '{"name":"%s","payload":"%s","type":134217729}' "$event" "$payload" \
     | openssl dgst -sha384 | sed 's/^.*= //')
+  # dstack-dev images serve no digest; the v1 one recomputed from the fields must then fold into the register.
+  [ "$digest" = - ] && digest=$v1
   if [ "$digest" != "$v1" ] && [ "$digest" != "$v2" ]; then
     echo "FAIL: event '$(printf '%s' "$event" | clean)' digest does not match its fields" >&2; exit 1
   fi
   fold=$(printf '%s%s' "$fold" "$digest" | xxd -r -p | openssl dgst -sha384 | sed 's/^.*= //')
   count=$((count + 1))
-done < <(jq -r '.event_log[] | select(.imr == 3) | [.digest, .event, .event_payload] | @tsv' "$tmp/quote.json")
+done < <(jq -r '.event_log[] | select(.imr == 3)
+  | [(.digest // "" | if . == "" then "-" else . end), .event, .event_payload] | @tsv' "$tmp/quote.json")
 if [ "$count" -eq 0 ] || [ "$fold" != "$quoted_rtmr3" ]; then
   echo "FAIL: $count RTMR3 events replay to $fold, quote carries RTMR3 $quoted_rtmr3" >&2
   exit 1
