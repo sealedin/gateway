@@ -1,0 +1,12 @@
+{
+  "image": "dstack-dev-0.5.12",
+  "os_image_hash": "e866e987221db357129ebc3f066b6706ef955889ea95e5510acbdf3d3055186b",
+  "instance_type": "tdx.medium",
+  "vcpus": 2,
+  "memory_gb": 4,
+  "captured_from": "sealedin-gateway-01 (tdx.medium) on 2026-11-06, platform attestation",
+  "mrtd": "7fe60787222bd394cb516abca2435f22f035ab2cc9c0a4b4b3b148e46297f3d931a237b72f359052c6e657d8c1409173",
+  "rtmr0": "027b610ab0555482f8a3868524093bdf3cdbe2539f81dfeeb886864654cb2fe3422f7fc36d4bab6fa46683aad11d1ba7",
+  "rtmr1": "4ae609807c765916a31d724786ed74bcb97e168a9d937b04936aeef2015c907eba5ac352c6bcd749c246fd62ffb659ec",
+  "rtmr2": "80e945df96ec417b68d574dba18d199a7448d66c3d0e56f073167a9513d2381601f5d614853646d2c49c5d8d58a7daf5"
+}

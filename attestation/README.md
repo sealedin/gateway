@@ -9,5 +9,6 @@ purpose: Pinned guest OS measurements (MRTD, RTMR0-2) per dstack image and VM sh
 | File | Image | Shape | Source |
 |---|---|---|---|
 | `dstack-0.6.1-tdx.medium.json` | dstack-0.6.1 (`os_image_hash` ec43cb8c...) | tdx.medium, 2 vCPU, 4 GB | captured from our own CVM's platform attestation on 28 Oct 2026 (trust on first use) |
+| `dstack-dev-0.5.12-tdx.medium.json` | dstack-dev-0.5.12 (`os_image_hash` e866e987...), the beta's root-access image | tdx.medium, 2 vCPU, 4 GB | captured from sealedin-gateway-01's platform attestation on 6 Nov 2026 (trust on first use) |
 
 A captured pin proves consistency, not provenance: the reproducible way is `dstack-mr measure -c <vcpus> -m <memory> <image>/metadata.json` against the published dstack release, which must yield the same four values; do that before relying on a pin for anything a client enforces, and re-capture on every image or shape change.
