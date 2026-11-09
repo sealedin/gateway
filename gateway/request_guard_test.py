@@ -37,7 +37,7 @@ def load_guard():
 
 rg = load_guard()
 # gateway/config.yaml's Kimi-K3: TestGuardArithmeticUsesTheMeasuredConfig in internal/gateway holds these equal to it.
-KIMI = {"input_usd": 1.9425e-6, "output_usd": 9.975e-6, "max_input": 1048576, "max_output": 65535}
+KIMI = {"input_usd": 1.85e-6, "output_usd": 9.5e-6, "max_input": 1048576, "max_output": 65535}
 FULL_CONTEXT = 1048576
 
 
@@ -70,12 +70,12 @@ class GuardTest(unittest.TestCase):
             return False
 
     def test_the_twenty_usd_case_is_closed(self):
-        """Ten full-context requests naming one output token, on a key with 1 USD left: none of the 20.40 USD gets out."""
+        """Ten full-context requests naming one output token, on a key with 1 USD left: none of the 19.40 USD gets out."""
         admitted = [self.admit(request(str(i)), auth(spend=24.0)) for i in range(10)]
         self.assertEqual(admitted, [False] * 10)
 
     def test_running_requests_count(self):
-        """With 5 USD left each worst case of 2.04 USD fits twice; the third is refused while the others run."""
+        """With 5 USD left each worst case of 1.94 USD fits twice; the third is refused while the others run."""
         admitted = [self.admit(request(str(i)), auth(spend=20.0)) for i in range(10)]
         self.assertEqual(admitted, [True, True] + [False] * 8)
 

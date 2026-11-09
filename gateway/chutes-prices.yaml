@@ -1,9 +1,11 @@
 # Upstream list prices, USD per million tokens, as published by Chutes on as_of. The measured price sheet
 # (gateway/config.yaml, mirrored in internal/gateway.CanonicalModelPrices()) is each price times (100 + markup_percent)
 # over 100, exactly; the list test fails CI when the two drift. Not read at runtime: a record for the recomputation.
+# markup_percent is the one markup parameter, equal to internal/gateway.MarkupPercent; a change to it changes every
+# literal in config.yaml and so the measurement.
 as_of: 2026-11-03
 source: https://chutes.ai/app
-markup_percent: 5
+markup_percent: 0
 # max_output_tokens: max_output_length from https://llm.chutes.ai/v1/models on max_output_as_of. The egress clamps requests to
 # it and LiteLLM reserves against it (config.yaml model_info, internal/gateway.MaxOutputTokens()). max_input_tokens: context_length
 # from the same list, which caps the request guard's worst case for input (gateway/request_guard.py).
