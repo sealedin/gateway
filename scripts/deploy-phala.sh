@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Deploy or update the gateway on Phala Cloud (dstack). Secrets go from the macOS Keychain
-# (env-from-keychain.sh) into a mktemp file that lives only for the CLI call (never the repo's .env); the CLI encrypts
-# it to the CVM's KMS key, so only the attested guest reads it. The per-deployment value (the custom edge domain,
+# Deploy or update the gateway on Phala Cloud (dstack). Secrets go from the macOS Keychain (env-from-keychain.sh) or,
+# with SEALEDIN_ENV_SOURCE=environment, from the process environment (env-from-environment.sh, the deploy workflow) into
+# a mktemp file that lives only for the CLI call (never the repo's .env); the CLI encrypts it to the CVM's KMS key, so
+# only the attested guest reads it. The per-deployment value (the custom edge domain,
 # docs/domain.md) rides in the same sealed env, so the measured compose, and with it the compose hash in RTMR3, is
 # identical for every deployment of a release. The env variable names are measured too (allowed_envs).
 #
@@ -12,7 +13,8 @@
 # Environment: SEALEDIN_EDGE_DOMAIN (required: the custom domain the edge obtains its certificate for; the DNS records
 # it needs are printed after the deploy), SEALEDIN_PHALA_INSTANCE (default tdx.medium), SEALEDIN_PHALA_IMAGE (default
 # dstack-dev-0.5.12 for the beta), SEALEDIN_ROOT_SSH_PUBKEY (the operator's emergency root login: required on a dev image,
-# refused on any other, and kept out of the repo), and PHALA_CLOUD_API_KEY or a prior `phala login`.
+# refused on any other, and kept out of the repo), SEALEDIN_ENV_SOURCE (keychain, the default, or environment), and
+# PHALA_CLOUD_API_KEY or a prior `phala login`.
 #
 # Beta only: whoever holds that key reads every prompt and secret in the CVM. The quote shows the dev image through its
 # guest OS measurements and the variable's name through allowed_envs, but not the key itself, since env values are not measured.
@@ -26,7 +28,12 @@ domain=${SEALEDIN_EDGE_DOMAIN:?$usage}
 instance=${SEALEDIN_PHALA_INSTANCE:-tdx.medium}
 image=${SEALEDIN_PHALA_IMAGE:-dstack-dev-0.5.12}
 root_key=${SEALEDIN_ROOT_SSH_PUBKEY:-}
+env_source=${SEALEDIN_ENV_SOURCE:-keychain}
 compose=docker-compose.phala.yml
+case "$env_source" in
+  keychain|environment) ;;
+  *) echo "SEALEDIN_ENV_SOURCE must be keychain or environment, got '$env_source'" >&2; exit 1 ;;
+esac
 if [[ $image == dstack-dev-* ]]; then
   if [[ -z $root_key ]]; then
     echo "$image needs SEALEDIN_ROOT_SSH_PUBKEY" >&2; exit 1
@@ -56,7 +63,7 @@ fi
 
 envfile=$(mktemp)
 trap 'rm -f "$envfile"' EXIT
-./scripts/env-from-keychain.sh "$envfile"
+"./scripts/env-from-$env_source.sh" "$envfile"
 printf 'SEALEDIN_EDGE_DOMAIN=%s\n' "$domain" >> "$envfile"
 if [[ -n $root_key ]]; then
   printf 'DSTACK_ROOT_PUBLIC_KEY=%s\nDSTACK_AUTHORIZED_KEYS=%s\n' "$root_key" "$root_key" >> "$envfile"
