@@ -1,4 +1,5 @@
 """Tests for the request guard's arithmetic (CI: python3 -I -B -W error -m unittest discover -s gateway -p '*_test.py')."""
+
 import asyncio
 import importlib.util
 import os
@@ -21,8 +22,12 @@ def load_guard():
     logger.CustomLogger = type("CustomLogger", (), {})
     fake_yaml = types.ModuleType("yaml")
     fake_yaml.safe_load = lambda _: {"model_list": []}
-    fake = {"litellm": types.SimpleNamespace(BudgetExceededError=BudgetExceededError), "litellm.integrations": types.ModuleType("x"),
-            "litellm.integrations.custom_logger": logger, "yaml": fake_yaml}
+    fake = {
+        "litellm": types.SimpleNamespace(BudgetExceededError=BudgetExceededError),
+        "litellm.integrations": types.ModuleType("x"),
+        "litellm.integrations.custom_logger": logger,
+        "yaml": fake_yaml,
+    }
     spec = importlib.util.spec_from_file_location("request_guard", os.path.join(HERE, "request_guard.py"))
     module = importlib.util.module_from_spec(spec)
     with mock.patch.dict(sys.modules, fake):
@@ -32,7 +37,7 @@ def load_guard():
 
 rg = load_guard()
 # gateway/config.yaml's Kimi-K3: TestGuardArithmeticUsesTheMeasuredConfig in internal/gateway holds these equal to it.
-KIMI = {"input_usd": 1.9425e-6, "output_usd": 9.975e-6, "max_input": 1048576, "max_output": 65535}
+KIMI = {"input_usd": 1.85e-6, "output_usd": 9.5e-6, "max_input": 1048576, "max_output": 65535}
 FULL_CONTEXT = 1048576
 
 
@@ -65,12 +70,12 @@ class GuardTest(unittest.TestCase):
             return False
 
     def test_the_twenty_usd_case_is_closed(self):
-        """Ten full-context requests naming one output token, on a key with 1 USD left: none of the 20.40 USD gets out."""
+        """Ten full-context requests naming one output token, on a key with 1 USD left: none of the 19.40 USD gets out."""
         admitted = [self.admit(request(str(i)), auth(spend=24.0)) for i in range(10)]
         self.assertEqual(admitted, [False] * 10)
 
     def test_running_requests_count(self):
-        """With 5 USD left each worst case of 2.04 USD fits twice; the third is refused while the others run."""
+        """With 5 USD left each worst case of 1.94 USD fits twice; the third is refused while the others run."""
         admitted = [self.admit(request(str(i)), auth(spend=20.0)) for i in range(10)]
         self.assertEqual(admitted, [True, True] + [False] * 8)
 
@@ -113,7 +118,10 @@ class GuardTest(unittest.TestCase):
 
     def test_a_clients_copy_of_litellms_metadata_is_dropped_on_each_route(self):
         spoof = {"user_api_key": "someone else"}
-        for call_type, kept, dropped in (("acompletion", "metadata", "litellm_metadata"), ("anthropic_messages", "litellm_metadata", "metadata")):
+        for call_type, kept, dropped in (
+            ("acompletion", "metadata", "litellm_metadata"),
+            ("anthropic_messages", "litellm_metadata", "metadata"),
+        ):
             data = request("a" + call_type, content_bytes=1)
             data[kept], data[dropped] = {"own": 1}, spoof
             asyncio.run(self.guard.async_pre_call_hook(auth(spend=0.0), None, data, call_type))
@@ -130,7 +138,7 @@ class GuardTest(unittest.TestCase):
 
     def test_multibyte_text_counts_its_bytes(self):
         data = request("a", content_bytes=0)
-        data["messages"][0]["content"] = "\U0001F600" * 100000  # 4 bytes, up to 4 tokens
+        data["messages"][0]["content"] = "\U0001f600" * 100000  # 4 bytes, up to 4 tokens
         self.assertFalse(self.admit(data, auth(spend=24.5, budget=25.0 - 0.3)))
 
     def test_an_unpriced_model_is_refused_for_a_key_with_a_budget(self):

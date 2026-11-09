@@ -1,0 +1,98 @@
+# Rolls the checked-out release onto the running CVM from the Actions page, then verifies the deployment end to end.
+# Secrets live in the production environment, so a deploy needs no laptop; its protection rules (required reviewer,
+# tags only) are the approval step. The compose is whatever the chosen ref pins, so run it from a release tag.
+name: deploy
+on:
+  workflow_dispatch:
+    inputs:
+      cvm_id:
+        description: CVM id to update; empty takes the SEALEDIN_CVM_ID variable
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+# One deploy at a time, and a second click waits rather than cancelling a half-applied update.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+    env:
+      SEALEDIN_EDGE_DOMAIN: ${{ vars.SEALEDIN_EDGE_DOMAIN }}
+      SEALEDIN_ROOT_SSH_PUBKEY: ${{ vars.SEALEDIN_ROOT_SSH_PUBKEY }}
+      SEALEDIN_PHALA_IMAGE: ${{ vars.SEALEDIN_PHALA_IMAGE || 'dstack-dev-0.5.12' }}
+      SEALEDIN_PHALA_INSTANCE: ${{ vars.SEALEDIN_PHALA_INSTANCE || 'tdx.medium' }}
+      CVM_ID: ${{ inputs.cvm_id || vars.SEALEDIN_CVM_ID }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: ref
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          echo "deploying $REF" >> "$GITHUB_STEP_SUMMARY"
+          case "$REF" in
+            refs/tags/v*) ;;
+            *) echo "::warning::$REF is not a release tag; the compose it pins may not be a release." ;;
+          esac
+          test -n "$CVM_ID" || { echo "no CVM id: pass the input or set the SEALEDIN_CVM_ID variable" >&2; exit 1; }
+      # The CLI the deploy script drives, at the version it was written against; the lockfile carries the integrity hash.
+      - name: phala cli
+        run: |
+          npm ci --prefix tools/phala-cli --ignore-scripts --no-audit --no-fund
+          echo "$PWD/tools/phala-cli/node_modules/.bin" >> "$GITHUB_PATH"
+      # Secrets reach only this step. The script writes them to a mktemp file the CLI encrypts to the CVM's KMS key.
+      - name: deploy
+        id: deploy
+        env:
+          SEALEDIN_ENV_SOURCE: environment
+          PHALA_CLOUD_API_KEY: ${{ secrets.PHALA_CLOUD_API_KEY }}
+          CHUTES_API_KEY: ${{ secrets.CHUTES_API_KEY }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          SEALEDIN_OPERATOR_API_KEY: ${{ secrets.SEALEDIN_OPERATOR_API_KEY }}
+          SOLANA_RPC_API_KEY: ${{ secrets.SOLANA_RPC_API_KEY }}
+          SEALEDIN_FEE_PAYER_KEY: ${{ secrets.SEALEDIN_FEE_PAYER_KEY }}
+        run: |
+          out=$(./scripts/deploy-phala.sh update "$CVM_ID")
+          printf '%s\n' "$out"
+          fence='```'
+          printf '%s\n%s\n%s\n' "$fence" "$out" "$fence" >> "$GITHUB_STEP_SUMMARY"
+          compose_hash=$(sed -n 's/^compose-hash //p' <<<"$out")
+          app_id=$(sed -n 's/^app id \([0-9a-f]*\), gateway domain .*$/\1/p' <<<"$out")
+          gateway=$(sed -n 's/^app id [0-9a-f]*, gateway domain \(.*\)$/\1/p' <<<"$out")
+          test -n "$compose_hash" && test -n "$app_id" && test -n "$gateway" || { echo "could not read the pins from the deploy output" >&2; exit 1; }
+          {
+            echo "compose_hash=$compose_hash"
+            echo "app_id=$app_id"
+            echo "gateway=$gateway"
+          } >> "$GITHUB_OUTPUT"
+      # The CVM restarts on an update, so the verifier is retried for up to 15 minutes; it passes only once the new
+      # compose-hash is in RTMR3 and the edge serves the endorsed certificate.
+      - name: verify
+        env:
+          SEALEDIN_EXPECTED_COMPOSE_HASH: ${{ steps.deploy.outputs.compose_hash }}
+          SEALEDIN_EXPECTED_APP_ID: ${{ steps.deploy.outputs.app_id }}
+          SEALEDIN_EXPECTED_GATEWAY: ${{ steps.deploy.outputs.gateway }}
+          SEALEDIN_EXPECTED_ACME_ACCOUNT: ${{ vars.SEALEDIN_EXPECTED_ACME_ACCOUNT }}
+          SEALEDIN_VM_ID: ${{ env.CVM_ID }}
+        run: |
+          export SEALEDIN_EXPECTED_MRS="attestation/$SEALEDIN_PHALA_IMAGE-$SEALEDIN_PHALA_INSTANCE.json"
+          test -f "$SEALEDIN_EXPECTED_MRS" || { echo "no guest OS pin for $SEALEDIN_PHALA_IMAGE on $SEALEDIN_PHALA_INSTANCE" >&2; exit 1; }
+          for attempt in $(seq 1 30); do
+            if ./scripts/verify-gateway.sh "$SEALEDIN_EDGE_DOMAIN"; then
+              echo "verified $SEALEDIN_EDGE_DOMAIN on attempt $attempt" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            echo "attempt $attempt: not verified yet, the CVM may still be restarting"
+            sleep 30
+          done
+          echo "the deployment did not verify within 15 minutes" >&2
+          exit 1

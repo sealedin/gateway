@@ -24,12 +24,18 @@ linters:
     - wsl
     - wsl_v5
   settings:
+    # Complexity and duplication ceilings sit just above the code's current maxima (cyclomatic 18, cognitive 20,
+    # 64 lines, no clone of 75 tokens), so they hold the line rather than describe it.
     cyclop:
-      max-complexity: 30
+      max-complexity: 20
+    gocyclo:
+      min-complexity: 20
     funlen:
-      lines: 100
+      lines: 80
     gocognit:
       min-complexity: 20
+    dupl:
+      threshold: 100
     lll:
       line-length: 140
     govet:

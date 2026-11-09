@@ -67,8 +67,7 @@ class EntrypointTest(unittest.TestCase):
     def test_main_exports_key_from_volume_and_execs_stock_entrypoint(self):
         self.write_key(KEY)
         env, calls = {"LITELLM_MASTER_KEY": "sk-ignored"}, []
-        entrypoint.main(["--config", "/config.yaml"], env, self.key_dir, self.key_file,
-                        lambda path, argv: calls.append((path, argv)))
+        entrypoint.main(["--config", "/config.yaml"], env, self.key_dir, self.key_file, lambda path, argv: calls.append((path, argv)))
         self.assertEqual(KEY, env["LITELLM_MASTER_KEY"], "the volume wins over the environment")
         self.assertEqual([(entrypoint.STOCK_ENTRYPOINT, [entrypoint.STOCK_ENTRYPOINT, "--config", "/config.yaml"])], calls)
 

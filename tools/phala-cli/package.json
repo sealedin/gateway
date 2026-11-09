@@ -1,0 +1,8 @@
+{
+  "name": "sealedin-phala-cli",
+  "private": true,
+  "description": "Pins the Phala Cloud CLI the deploy workflow runs; package-lock.json carries its integrity hash. Install with npm ci --prefix tools/phala-cli.",
+  "dependencies": {
+    "phala": "1.1.22"
+  }
+}

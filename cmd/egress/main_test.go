@@ -84,7 +84,7 @@ func TestEgressDockerfileBuildsLikeIdentity(t *testing.T) {
 	egress, err := os.ReadFile(filepath.Join("..", "..", "Dockerfile.egress"))
 	require.NoError(t, err)
 	for _, line := range []string{"FROM golang@sha256:", "ENV GOTOOLCHAIN=local", "RUN CGO_ENABLED=0 go build",
-		"FROM gcr.io/distroless/static-debian12@sha256:"} {
+		"FROM gcr.io/distroless/static-debian13@sha256:"} {
 		want := lineContaining(string(identity), line)
 		require.NotEmpty(t, want, line)
 		require.Contains(t, string(egress), want, "Dockerfile.egress drifted from Dockerfile on: %s", line)

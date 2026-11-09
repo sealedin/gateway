@@ -10,10 +10,12 @@ import (
 )
 
 // gateway/chutes-prices.yaml mirrors these; the sheet is list × (100 + MarkupPercent) / 100, exact, per the list test.
+// MarkupPercent is the one markup parameter: listPrices() carries the upstream list, CanonicalModelPrices() applies it.
 const (
 	ListSource    = "https://chutes.ai/app"
 	ListAsOf      = "2026-11-03"
-	MarkupPercent = 5
+	MarkupPercent = 0
+	percent       = 100
 )
 
 const (
@@ -78,17 +80,35 @@ func microUSDPerMTok(costPerToken string) (uint64, error) {
 	return r.Num().Uint64(), nil
 }
 
-// CanonicalModelPrices is the price sheet gateway/config.yaml must mirror: the ListAsOf Chutes list plus MarkupPercent.
+// listPrices is the ListAsOf Chutes list in micro-USD per million tokens, the models of gateway/chutes-prices.yaml.
 //
 //nolint:mnd // price sheet: the literals are the data
-func CanonicalModelPrices() map[string]Price {
+func listPrices() map[string]Price {
 	return map[string]Price{
-		"zai-org/GLM-5.2-TEE":                    {InputMicroUSDPerMTok: 1_312_500, OutputMicroUSDPerMTok: 4_147_500},
-		"moonshotai/Kimi-K3-TEE":                 {InputMicroUSDPerMTok: 1_942_500, OutputMicroUSDPerMTok: 9_975_000},
-		"deepseek-ai/DeepSeek-V4-Flash-0731-TEE": {InputMicroUSDPerMTok: 462_000, OutputMicroUSDPerMTok: 1_386_000},
-		"Qwen/Qwen3.5-397B-A17B-TEE":             {InputMicroUSDPerMTok: 472_500, OutputMicroUSDPerMTok: 3_150_000},
-		"Qwen/Qwen3.8-27B-TEE":                   {InputMicroUSDPerMTok: 40_950, OutputMicroUSDPerMTok: 1_312_500},
+		"zai-org/GLM-5.2-TEE":                    {InputMicroUSDPerMTok: 1_250_000, OutputMicroUSDPerMTok: 3_950_000},
+		"moonshotai/Kimi-K3-TEE":                 {InputMicroUSDPerMTok: 1_850_000, OutputMicroUSDPerMTok: 9_500_000},
+		"deepseek-ai/DeepSeek-V4-Flash-0731-TEE": {InputMicroUSDPerMTok: 440_000, OutputMicroUSDPerMTok: 1_320_000},
+		"Qwen/Qwen3.5-397B-A17B-TEE":             {InputMicroUSDPerMTok: 450_000, OutputMicroUSDPerMTok: 3_000_000},
+		"Qwen/Qwen3.8-27B-TEE":                   {InputMicroUSDPerMTok: 39_000, OutputMicroUSDPerMTok: 1_250_000},
 	}
+}
+
+// CanonicalModelPrices is the price sheet gateway/config.yaml must mirror: listPrices() plus MarkupPercent. The list test
+// recomputes it with exact arithmetic from gateway/chutes-prices.yaml, so a markup the list does not divide by whole
+// micro-USD fails there, not here.
+func CanonicalModelPrices() map[string]Price {
+	list := listPrices()
+	prices := make(map[string]Price, len(list))
+	for model, price := range list {
+		prices[model] = Price{InputMicroUSDPerMTok: markedUp(price.InputMicroUSDPerMTok),
+			OutputMicroUSDPerMTok: markedUp(price.OutputMicroUSDPerMTok)}
+	}
+	return prices
+}
+
+// markedUp is micro × (100 + MarkupPercent) / 100 in integer arithmetic.
+func markedUp(micro uint64) uint64 {
+	return micro * (percent + MarkupPercent) / percent
 }
 
 // CanonicalModel strips the LiteLLM provider prefix so providers serving the same weights key the same price.
