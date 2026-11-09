@@ -6,6 +6,7 @@ LiteLLM's back and a client's additional_drop_params turns off any configured dr
 Budget: a request is refused unless the key can pay its worst case with what running requests may still cost. LiteLLM reserves
 output only and admits a request over the remainder, and with its token counter off it reserves no input at all.
 """
+
 import json
 import os
 import time
@@ -15,13 +16,39 @@ import litellm
 import yaml
 from litellm.integrations.custom_logger import CustomLogger
 
-ALLOWED = frozenset({
-    "model", "messages", "system", "stream", "stream_options", "max_tokens", "max_completion_tokens", "temperature", "top_p",
-    "top_k", "stop", "stop_sequences", "presence_penalty", "frequency_penalty", "seed", "tools", "tool_choice",
-    "parallel_tool_calls", "response_format", "reasoning_effort", "thinking", "metadata", "user", "n", "logit_bias", "logprobs",
-    "top_logprobs", "input",  # input: the other routes fail upstream, as they should, rather than in here
-    "litellm_metadata",  # LiteLLM's own on /v1/messages, already in this body: without it the spend finds no key
-})
+ALLOWED = frozenset(
+    {
+        "model",
+        "messages",
+        "system",
+        "stream",
+        "stream_options",
+        "max_tokens",
+        "max_completion_tokens",
+        "temperature",
+        "top_p",
+        "top_k",
+        "stop",
+        "stop_sequences",
+        "presence_penalty",
+        "frequency_penalty",
+        "seed",
+        "tools",
+        "tool_choice",
+        "parallel_tool_calls",
+        "response_format",
+        "reasoning_effort",
+        "thinking",
+        "metadata",
+        "user",
+        "n",
+        "logit_bias",
+        "logprobs",
+        "top_logprobs",
+        "input",  # input: the other routes fail upstream, as they should, rather than in here
+        "litellm_metadata",  # LiteLLM's own on /v1/messages, already in this body: without it the spend finds no key
+    }
+)
 LITELLM_OWN = frozenset({"litellm_call_id", "litellm_logging_obj", "proxy_server_request"})  # a client's value does not remove them
 MESSAGES_CALL = "anthropic_messages"
 NOT_SENT_UPSTREAM = ("metadata", "litellm_metadata", "user")
@@ -35,12 +62,15 @@ def load_models(path):
     """The measured prices and limits, by the name clients request."""
     with open(path, encoding="utf-8") as f:
         config = yaml.safe_load(f)
-    return {entry["model_name"]: {
-        "input_usd": float(entry["litellm_params"]["input_cost_per_token"]),
-        "output_usd": float(entry["litellm_params"]["output_cost_per_token"]),
-        "max_input": int(entry["model_info"]["max_input_tokens"]),
-        "max_output": int(entry["model_info"]["max_output_tokens"]),
-    } for entry in config["model_list"]}
+    return {
+        entry["model_name"]: {
+            "input_usd": float(entry["litellm_params"]["input_cost_per_token"]),
+            "output_usd": float(entry["litellm_params"]["output_cost_per_token"]),
+            "max_input": int(entry["model_info"]["max_input_tokens"]),
+            "max_output": int(entry["model_info"]["max_output_tokens"]),
+        }
+        for entry in config["model_list"]
+    }
 
 
 def worst_case_usd(model, body_bytes, requested):
@@ -111,9 +141,14 @@ class RequestGuard(CustomLogger):
         cost = worst_case_usd(model, body_bytes, [data.get(field) for field in OUTPUT_FIELDS])
         call = data.setdefault("litellm_call_id", str(uuid.uuid4()))
         if not self.ledger.admit(auth.token, call, cost, auth.max_budget - spend):
-            raise litellm.BudgetExceededError(current_cost=spend, max_budget=auth.max_budget, message=(
-                "This key cannot cover this request's worst case of %.4f USD on top of its running requests. "
-                "Send less, name a smaller max_tokens, wait for running requests to end, or top up." % cost))
+            raise litellm.BudgetExceededError(
+                current_cost=spend,
+                max_budget=auth.max_budget,
+                message=(
+                    f"This key cannot cover this request's worst case of {cost:.4f} USD on top of its running requests. "
+                    "Send less, name a smaller max_tokens, wait for running requests to end, or top up."
+                ),
+            )
 
     async def async_log_success_event(self, kwargs, response_obj, start_time, end_time):
         self.ledger.finish(kwargs.get("litellm_call_id"))

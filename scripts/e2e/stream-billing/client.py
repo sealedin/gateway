@@ -1,7 +1,8 @@
 """Asserts against the pinned LiteLLM: through the drain a client that hangs up or stalls is billed for the whole stream, with
 or without the pinned Caddy in front, a 404 from the upstream puts no model in cooldown, a prompt built to stall a tokenizer
-freezes nothing, the egress's closing chunk bills, and the guard counts each request's worst case, running ones included, whatever max_tokens says.
-Prints what a direct connection does, for the record."""
+freezes nothing, the egress's closing chunk bills, and the guard counts each request's worst case, running ones included,
+whatever max_tokens says. Prints what a direct connection does, for the record."""
+
 import http.client
 import json
 import socket
@@ -23,8 +24,9 @@ SETTLE_SECONDS = 420  # a stream, the drain's 30-second stall limit, LiteLLM's f
 
 def admin(method, path, body=None):
     conn = http.client.HTTPConnection(*LITELLM, timeout=180)
-    conn.request(method, path, json.dumps(body) if body else None,
-                 {"Authorization": "Bearer " + MASTER, "Content-Type": "application/json"})
+    conn.request(
+        method, path, json.dumps(body) if body else None, {"Authorization": "Bearer " + MASTER, "Content-Type": "application/json"}
+    )
     resp = conn.getresponse()
     raw = resp.read()
     conn.close()
@@ -48,15 +50,20 @@ def request_bytes(key, prompt, path, max_tokens=None):
     elif path == "/v1/messages":
         payload = {"model": "e2e", "stream": True, "max_tokens": 100, "messages": [{"role": "user", "content": prompt}]}
     else:
-        payload = {"model": "e2e", "stream": True, "stream_options": {"include_usage": True},
-                   "messages": [{"role": "user", "content": prompt}]}
+        payload = {
+            "model": "e2e",
+            "stream": True,
+            "stream_options": {"include_usage": True},
+            "messages": [{"role": "user", "content": prompt}],
+        }
     if max_tokens:
         payload["max_tokens"] = max_tokens
-    credential = "x-api-key: %s" % key if path == "/v1/messages" else "Authorization: Bearer %s" % key
+    credential = f"x-api-key: {key}" if path == "/v1/messages" else f"Authorization: Bearer {key}"
     body = json.dumps(payload)
-    return ("POST %s HTTP/1.1\r\nHost: e2e\r\n%s\r\n"
-            "Content-Type: application/json\r\nConnection: close\r\nContent-Length: %d\r\n\r\n%s"
-            % (path, credential, len(body), body)).encode()
+    return (
+        f"POST {path} HTTP/1.1\r\nHost: e2e\r\n{credential}\r\n"
+        f"Content-Type: application/json\r\nConnection: close\r\nContent-Length: {len(body)}\r\n\r\n{body}"
+    ).encode()
 
 
 def open_stream(addr, key, prompt="hi", path="/v1/chat/completions", max_tokens=None):
@@ -126,7 +133,7 @@ def admitted(budget):
     """How many streams naming a huge max_tokens one key's budget admits at once: LiteLLM reserves each at most the model's limit."""
     key, held, count = new_key(budget), [], 0
     while count < 5:
-        sock, _, status = open_stream(LITELLM, key, max_tokens=10 ** 9)
+        sock, _, status = open_stream(LITELLM, key, max_tokens=10**9)
         held.append(sock)
         if b" 200 " not in status:
             break
@@ -179,16 +186,16 @@ def check_cors():
     for method, path in (("POST", "/v1/keys/claim"), ("GET", "/v1/catalog")):
         _, headers = edge_headers(method, path, site)
         if headers.get("access-control-allow-origin") != site or headers.get("access-control-expose-headers") != "Retry-After":
-            sys.exit("FAIL: no CORS for the site on %s: %s" % (path, headers))
+            sys.exit(f"FAIL: no CORS for the site on {path}: {headers}")
         _, headers = edge_headers(method, path, "https://evil.example")
         if any(k.startswith("access-control-") for k in headers):
-            sys.exit("FAIL: another origin got CORS on %s" % path)
+            sys.exit(f"FAIL: another origin got CORS on {path}")
     status, headers = edge_headers("OPTIONS", "/v1/keys/claim", site)
     if status != 204 or "authorization" not in headers.get("access-control-allow-headers", ""):
-        sys.exit("FAIL: preflight: %s %s" % (status, headers))
+        sys.exit(f"FAIL: preflight: {status} {headers}")
     status, headers = edge_headers("OPTIONS", "/v1/keys/claim", "https://evil.example")
     if status == 204 or any(k.startswith("access-control-") for k in headers):
-        sys.exit("FAIL: another origin's preflight: %s %s" % (status, headers))
+        sys.exit(f"FAIL: another origin's preflight: {status} {headers}")
     _, headers = edge_headers("POST", "/v1/keys/buy", site)
     if any(k.startswith("access-control-") for k in headers):
         sys.exit("FAIL: x402 buy got CORS")
@@ -197,9 +204,14 @@ def check_cors():
 def spoofed_owner(path):
     """Spend must land on the key that paid, whatever a client's metadata says about whose it is."""
     key, victim = new_key(), new_key()
-    fields = {"model": "e2e", "stream": True, "max_tokens": 100, "messages": [{"role": "user", "content": "hi"}],
-              "metadata": {"user_api_key": victim, "user_api_key_hash": victim, "user_api_key_alias": "x"},
-              "litellm_metadata": {"user_api_key": victim, "user_api_key_hash": victim}}
+    fields = {
+        "model": "e2e",
+        "stream": True,
+        "max_tokens": 100,
+        "messages": [{"role": "user", "content": "hi"}],
+        "metadata": {"user_api_key": victim, "user_api_key_hash": victim, "user_api_key_alias": "x"},
+        "litellm_metadata": {"user_api_key": victim, "user_api_key_hash": victim},
+    }
     conn = http.client.HTTPConnection(*LITELLM, timeout=120)
     conn.request("POST", path, json.dumps(fields), {"x-api-key": key, "Content-Type": "application/json"})
     resp = conn.getresponse()
@@ -214,9 +226,17 @@ def spoofed_owner(path):
 
 def smuggled(path):
     """A field the fake refuses with a 418: extra_body and a client's own drop settings must not carry it to the upstream."""
-    fields = {"model": "e2e", "stream": True, "max_tokens": 1, "messages": [{"role": "user", "content": "hi"}], "foo": 1,
-              "additional_drop_params": [], "drop_params": False, "allowed_openai_params": ["foo"],
-              "extra_body": {"model": "other", "foo": 1}}
+    fields = {
+        "model": "e2e",
+        "stream": True,
+        "max_tokens": 1,
+        "messages": [{"role": "user", "content": "hi"}],
+        "foo": 1,
+        "additional_drop_params": [],
+        "drop_params": False,
+        "allowed_openai_params": ["foo"],
+        "extra_body": {"model": "other", "foo": 1},
+    }
     conn = http.client.HTTPConnection(*LITELLM, timeout=120)
     conn.request("POST", path, json.dumps(fields), {"x-api-key": new_key(), "Content-Type": "application/json"})
     resp = conn.getresponse()
@@ -235,18 +255,38 @@ def wait_billed(keys):
 
 
 def main():
-    keys = {name: new_key() for name in ("direct full", "direct hang-up", "drain full", "drain hang-up", "edge hang-up", "edge messages hang-up", "drain stall", "closing chunk", "one prompt", "one prompt, messages")}
+    keys = {
+        name: new_key()
+        for name in (
+            "direct full",
+            "direct hang-up",
+            "drain full",
+            "drain hang-up",
+            "edge hang-up",
+            "edge messages hang-up",
+            "drain stall",
+            "closing chunk",
+            "one prompt",
+            "one prompt, messages",
+        )
+    }
     liveliness = []
     held = stall(DRAIN, keys["drain stall"])
-    threads = [threading.Thread(target=f, args=a) for f, a in (
-        (complete, (LITELLM, keys["direct full"])), (hang_up, (LITELLM, keys["direct hang-up"])),
-        (complete, (DRAIN, keys["drain full"])), (hang_up, (DRAIN, keys["drain hang-up"])),
-        (hang_up, (EDGE, keys["edge hang-up"])),
-        (hang_up, (EDGE, keys["edge messages hang-up"], "/v1/messages")),
-        (complete, (DRAIN, keys["closing chunk"], "CUT")),
-        (freeze, (DRAIN, keys["one prompt"], "/v1/chat/completions", liveliness)),
-        (freeze, (DRAIN, keys["one prompt, messages"], "/v1/messages", liveliness)),
-        (freeze, (DRAIN, "sk-invalid", "/v1/chat/completions", liveliness, b" 401 ")))]
+    threads = [
+        threading.Thread(target=f, args=a)
+        for f, a in (
+            (complete, (LITELLM, keys["direct full"])),
+            (hang_up, (LITELLM, keys["direct hang-up"])),
+            (complete, (DRAIN, keys["drain full"])),
+            (hang_up, (DRAIN, keys["drain hang-up"])),
+            (hang_up, (EDGE, keys["edge hang-up"])),
+            (hang_up, (EDGE, keys["edge messages hang-up"], "/v1/messages")),
+            (complete, (DRAIN, keys["closing chunk"], "CUT")),
+            (freeze, (DRAIN, keys["one prompt"], "/v1/chat/completions", liveliness)),
+            (freeze, (DRAIN, keys["one prompt, messages"], "/v1/messages", liveliness)),
+            (freeze, (DRAIN, "sk-invalid", "/v1/chat/completions", liveliness, b" 401 ")),
+        )
+    ]
     for t in threads:
         t.start()
     for t in threads:
@@ -258,11 +298,11 @@ def main():
     print("for the record, a direct hang-up billed", spend(direct_cut), "of", FULL_COST)
     failed = [n for n, v in results.items() if abs(v - FULL_COST) > 1e-9]
     if failed:
-        sys.exit("FAIL: not billed in full: %s" % failed)
+        sys.exit(f"FAIL: not billed in full: {failed}")
 
     if len(liveliness) != 3:
-        sys.exit("FAIL: one prompt froze LiteLLM past %s s: %s" % (FREEZE_LIMIT_SECONDS, liveliness))
-    print("liveliness during the 1 MiB prompts: %s s" % ["%.1f" % t for t in liveliness])
+        sys.exit(f"FAIL: one prompt froze LiteLLM past {FREEZE_LIMIT_SECONDS} s: {liveliness}")
+    print("liveliness during the 1 MiB prompts: %s s" % [f"{t:.1f}" for t in liveliness])
 
     check_cors()
     # A claim's row exists at no budget until its credit lands: it must serve nothing meanwhile.
@@ -273,32 +313,32 @@ def main():
     for path in ("/v1/chat/completions", "/v1/messages"):
         got = spoofed_owner(path)
         if got != (200, FULL_COST, 0):
-            sys.exit("FAIL: a client's metadata moved the spend on %s: status, spend, victim's spend %s" % (path, got))
+            sys.exit(f"FAIL: a client's metadata moved the spend on {path}: status, spend, victim's spend {got}")
         status = smuggled(path)
         if status != 200:
-            sys.exit("FAIL: a client's field reached the upstream on %s: %s" % (path, status))
+            sys.exit(f"FAIL: a client's field reached the upstream on {path}: {status}")
 
     # The guard's worst case is the model's limit of 1 USD plus the body, not 10^9 tokens: half that buys nothing, 1.5 one.
     counts = admitted(RESERVATION / 2), admitted(RESERVATION * 1.5)
     if counts != (0, 1):
-        sys.exit("FAIL: streams admitted on budgets of half and 1.5 worst cases: %s, want (0, 1)" % (counts,))
+        sys.exit(f"FAIL: streams admitted on budgets of half and 1.5 worst cases: {counts}, want (0, 1)")
     # Each full-context request naming one output token may cost 2 USD of input: on 5 USD two run, and eight are refused.
     count = parallel_full_context(5)
     if count != 2:
-        sys.exit("FAIL: %s of 10 full-context requests admitted on 5 USD, want 2: input overruns the budget" % count)
+        sys.exit(f"FAIL: {count} of 10 full-context requests admitted on 5 USD, want 2: input overruns the budget")
     for path in ("/v1/chat/completions", "/v1/messages"):
         status = freed_after_a_stream(path)
         if status != 200:
-            sys.exit("FAIL: the guard did not free a finished request on %s: %s" % (path, status))
+            sys.exit(f"FAIL: the guard did not free a finished request on {path}: {status}")
 
     sock, _, status = open_stream(DRAIN, new_key(), path="/v1/responses")
     sock.close()
     if b" 404 " not in status:
-        sys.exit("FAIL: the fake upstream's 404 did not come back: %r" % status)
+        sys.exit(f"FAIL: the fake upstream's 404 did not come back: {status!r}")
     sock, _, status = open_stream(DRAIN, new_key())
     sock.close()
     if b" 200 " not in status:
-        sys.exit("FAIL: one upstream 404 put the model in cooldown: %r" % status)
+        sys.exit(f"FAIL: one upstream 404 put the model in cooldown: {status!r}")
 
     # /key/info reaches LiteLLM straight from the edge, so only the edge's own cap can answer: chunked, so no length gives it away.
     sock = socket.create_connection(EDGE, timeout=120)
@@ -313,9 +353,11 @@ def main():
     status = sock.makefile("rb").readline()
     sock.close()
     if b" 413 " not in status:
-        sys.exit("FAIL: the edge did not cap a body: %r" % status)
-    print("OK: billed in full through the drain, no cooldown from an upstream 404, bodies capped at the edge, no freeze, "
-          "CORS for the site only, no field smuggled, worst case at the model limit, running requests counted")
+        sys.exit(f"FAIL: the edge did not cap a body: {status!r}")
+    print(
+        "OK: billed in full through the drain, no cooldown from an upstream 404, bodies capped at the edge, no freeze, "
+        "CORS for the site only, no field smuggled, worst case at the model limit, running requests counted"
+    )
 
 
 main()

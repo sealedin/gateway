@@ -1,0 +1,16 @@
+# The gateway's Python (entrypoint, request guard) runs inside the measured LiteLLM image; the e2e scripts drive it.
+line-length = 140
+target-version = "py313"
+
+[lint]
+# pycodestyle, pyflakes, imports, bugbear, pyupgrade, bandit, simplify, ruff, and McCabe complexity.
+select = ["E", "W", "F", "I", "B", "UP", "S", "SIM", "RUF", "C90"]
+
+[lint.mccabe]
+max-complexity = 10
+
+[lint.per-file-ignores]
+# Tests and the e2e client assert by design and use fixed fake tokens.
+"**/*_test.py" = ["S101", "S105", "S106"]
+# The e2e client's main is one linear scenario (complexity 18), each branch a reported failure; it stays readable as is.
+"scripts/e2e/**" = ["S101", "S104", "S105", "S106", "S310", "C901"]

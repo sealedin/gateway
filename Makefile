@@ -4,7 +4,7 @@ SALES_BINARY := build/gateway-sales
 DRAIN_BINARY := build/gateway-drain
 SYNC_BINARY := build/sync-measurements
 
-.PHONY: tidy fmt fmt-check lint test build build-egress build-rpcproxy build-sales build-drain build-sync-measurements sync-measurements build-reproducible e2e-stream-billing vuln all
+.PHONY: tidy fmt fmt-check lint test build build-egress build-rpcproxy build-sales build-drain build-sync-measurements sync-measurements build-reproducible e2e-stream-billing vuln static audit-image all
 
 tidy:
 	go mod tidy && git diff --exit-code go.mod go.sum
@@ -63,6 +63,14 @@ build-reproducible:
 	@test "$$(shasum -a 256 build/g | cut -d' ' -f1)" = "$$(shasum -a 256 build/h | cut -d' ' -f1)"
 
 vuln:
-	govulncheck ./...
+	go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+
+# shellcheck, hadolint, actionlint, zizmor and ruff from digest-pinned images; needs a Docker daemon.
+static:
+	./scripts/static-checks.sh
+
+# Report only: known vulnerabilities in the pinned LiteLLM image, an input to the next upgrade (docs/litellm-pin.md).
+audit-image:
+	./scripts/audit-litellm-image.sh
 
 all: tidy fmt-check lint test build build-egress build-rpcproxy build-sales build-drain build-sync-measurements

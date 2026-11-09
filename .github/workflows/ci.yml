@@ -5,6 +5,9 @@ on:
     branches: [main, devel]
   pull_request:
 
+permissions:
+  contents: read
+
 env:
   GOTOOLCHAIN: local
 
@@ -12,8 +15,10 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
@@ -35,7 +40,10 @@ jobs:
       - name: test
         run: go test -race -covermode=atomic -coverprofile=coverage.out ./...
       - name: vuln
-        run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
+        run: make vuln
+      # shellcheck, hadolint, actionlint, zizmor and ruff, each from a digest-pinned image.
+      - name: static analysis
+        run: make static
       # The gateway entrypoint derives the master key inside the CVM; stdlib only, so the runner's python3 suffices.
       - name: gateway entrypoint
         run: python3 -I -B -W error -m unittest discover -s gateway -p '*_test.py'
@@ -43,10 +51,20 @@ jobs:
       - name: edge config
         run: |
           docker run --rm -v "$PWD/edge/Caddyfile:/etc/caddy/Caddyfile:ro" -e EDGE_DOMAIN=example.com \
-            caddy@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648 \
+            caddy@sha256:0c2243efcf437ab7f7a978f1027fcf0d4f9be8a75df27b1b3fbc5dbe0ffa8cf0 \
             caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
       # LiteLLM bills a stream only at its end, so a client that hangs up must stay billed behind the drain.
       - name: stream billing against the pinned LiteLLM
         run: make e2e-stream-billing
       - name: build
         run: go build -trimpath -buildvcs=false -ldflags "-s -w -buildid=" ./...
+
+  # A report, not a gate: the frozen LiteLLM pin carries known findings and moves only through docs/litellm-pin.md.
+  litellm-image-audit:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: make audit-image
