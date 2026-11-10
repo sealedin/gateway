@@ -112,3 +112,24 @@ func TestReferenceAmountRefuses(t *testing.T) {
 		require.ErrorContains(t, err, "another transaction")
 	})
 }
+
+// A host's bytes that claim more signers than they carry keys are refused, not indexed: the first signature is real, so the
+// check reaches the second.
+func TestReferenceAmountRefusesMoreSignersThanKeys(t *testing.T) {
+	t.Parallel()
+	w := x402test.NewWorld(t)
+	signer := x402test.NewKey(t)
+	key := x402test.Public(signer)
+	message := []byte{2, 0, 0, 1} // header: two required signatures; then one account key
+	message = append(message, key[:]...)
+	message = append(message, make([]byte, 32)...) // blockhash
+	message = append(message, 0)                   // no instructions
+	first := x402test.Sign(signer, message)
+	raw := append([]byte{2}, first...)
+	raw = append(raw, make([]byte, 64)...)
+	raw = append(raw, message...)
+	require.NotPanics(t, func() {
+		_, err := w.Policy.ReferenceAmount(raw, solana.SignatureFromBytes(first), key)
+		require.ErrorContains(t, err, "bad signature count")
+	})
+}
