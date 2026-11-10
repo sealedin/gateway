@@ -90,7 +90,8 @@ func (p Policy) ReferenceAmount(raw []byte, id solana.Signature, reference solan
 
 func verifySignatures(tx *solana.Transaction, raw []byte) error {
 	count := len(tx.Signatures)
-	if count == 0 || count > maxSignatures || count != int(tx.Message.Header.NumRequiredSignatures) {
+	if count == 0 || count > maxSignatures || count != int(tx.Message.Header.NumRequiredSignatures) ||
+		count > len(tx.Message.AccountKeys) {
 		return errors.New("x402: reference transaction: bad signature count")
 	}
 	message := raw[1+count*ed25519.SignatureSize:]

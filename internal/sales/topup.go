@@ -96,7 +96,11 @@ func (s *Sales) applyTopUp(ctx context.Context, target, alias string, amount uin
 	if err != nil {
 		return usage.KeyInfo{}, err
 	}
-	applied, _ := info.Metadata[appliedField].([]any)
+	// A record that is there but is no list cannot say this credit is new: crediting on it would repeat on every retry.
+	applied, isList := info.Metadata[appliedField].([]any)
+	if info.Metadata[appliedField] != nil && !isList {
+		return usage.KeyInfo{}, errors.New("sales: the key's record of applied top-ups is not a list")
+	}
 	if slices.Contains(applied, any(alias)) {
 		return info, nil
 	}

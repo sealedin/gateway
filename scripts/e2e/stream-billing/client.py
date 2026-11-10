@@ -3,6 +3,7 @@ or without the pinned Caddy in front, a 404 from the upstream puts no model in c
 freezes nothing, the egress's closing chunk bills, and the guard counts each request's worst case, running ones included,
 whatever max_tokens says. Prints what a direct connection does, for the record."""
 
+import hashlib
 import http.client
 import json
 import socket
@@ -245,6 +246,45 @@ def smuggled(path):
     return status
 
 
+def ledger_row(key):
+    """The row as the sales service reads it: by the token's hash, never the key (internal/usage)."""
+    status, body = admin("GET", "/key/info?key=" + hashlib.sha256(key.encode()).hexdigest())
+    assert status == 200, body
+    return body["info"]
+
+
+def check_key_ledger():
+    """What a payment's exactly-once credit rests on (docs/litellm-pin.md, item 6), against the pinned LiteLLM itself: a second
+    /key/generate under a payment's key changes nothing in its row, and /key/update sets the budget and the record of applied
+    top-ups in one call, the record coming back as the list that was sent."""
+    key = "sk-e2e-ledger-0123456789abcdef"
+    first = {"key": key, "key_alias": "x402-e2e-ledger", "max_budget": 20, "models": ["e2e"], "metadata": {"x402_kind": "first"}}
+    status, body = admin("POST", "/key/generate", first)
+    if status != 200 or body.get("key") != key:
+        sys.exit(f"FAIL: /key/generate did not take the caller's key: {status}")
+    # Another alias, so the request gets past the alias check to the insert, as the loser of a race does.
+    second = {**first, "key_alias": "x402-e2e-ledger-loser", "max_budget": 500, "blocked": True, "metadata": {"x402_kind": "second"}}
+    status, _ = admin("POST", "/key/generate", second)
+    row = ledger_row(key)
+    got = row["key_alias"], row["max_budget"], row["metadata"].get("x402_kind"), bool(row.get("blocked"))
+    if got != ("x402-e2e-ledger", 20, "first", False):
+        sys.exit(f"FAIL: a second /key/generate (status {status}) changed the payment's row: {got}")
+    print("for the record, a second /key/generate under one key answered", status)
+
+    applied = []
+    for alias, budget in (("x402-a", 45.5), ("x402-b", 70.25)):
+        applied.append(alias)
+        metadata = {**row["metadata"], "x402_topups": list(applied)}
+        status, body = admin("POST", "/key/update", {"key": key, "max_budget": budget, "metadata": metadata})
+        if status != 200:
+            sys.exit(f"FAIL: /key/update: {status} {body}")
+        row = ledger_row(key)
+        if row["max_budget"] != budget or row["metadata"].get("x402_topups") != applied:
+            sys.exit(f"FAIL: /key/update did not record a top-up: {row['max_budget']} {row['metadata']}")
+    if row["metadata"].get("x402_kind") != "first":
+        sys.exit(f"FAIL: /key/update lost metadata it was sent: {row['metadata']}")
+
+
 def wait_billed(keys):
     deadline = time.monotonic() + SETTLE_SECONDS
     while time.monotonic() < deadline:
@@ -305,6 +345,7 @@ def main():
     print("liveliness during the 1 MiB prompts: %s s" % [f"{t:.1f}" for t in liveliness])
 
     check_cors()
+    check_key_ledger()
     # A claim's row exists at no budget until its credit lands: it must serve nothing meanwhile.
     sock, _, status = open_stream(LITELLM, new_key(0))
     sock.close()
@@ -356,7 +397,8 @@ def main():
         sys.exit(f"FAIL: the edge did not cap a body: {status!r}")
     print(
         "OK: billed in full through the drain, no cooldown from an upstream 404, bodies capped at the edge, no freeze, "
-        "CORS for the site only, no field smuggled, worst case at the model limit, running requests counted"
+        "CORS for the site only, one row per payment key and top-ups recorded as a list, no field smuggled, "
+        "worst case at the model limit, running requests counted"
     )
 
 
