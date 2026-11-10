@@ -1084,6 +1084,26 @@ func TestBuyAnswers400ForATransactionItCannotDecode(t *testing.T) {
 	require.Empty(t, got.headers.Get(x402.HeaderRequired))
 }
 
+// The record of applied top-ups is what makes a credit happen once: a record that does not read is no licence to credit again.
+func TestTopUpFailsClosedWhenTheAppliedRecordDoesNotRead(t *testing.T) {
+	t.Parallel()
+	for name, record := range map[string]any{"a string": "x402-abc", "an object": map[string]any{"0": "x402-abc"}} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			s := newShop(t, nil)
+			key, _, _ := s.firstKey(t)
+			s.fake.SetMetadataField(key, "x402_topups", record)
+			got, _ := s.buy(t, key)
+			require.Equal(t, http.StatusBadGateway, got.status, "%v", got.body)
+			require.True(t, settlementOf(t, got).Success)
+			info, err := s.gw.LookupKey(t.Context(), key)
+			require.NoError(t, err)
+			require.InEpsilon(t, 25.0, info.MaxBudgetUSD, 1e-12, "nothing was credited")
+			require.Equal(t, record, info.Metadata["x402_topups"], "and the record was left as found")
+		})
+	}
+}
+
 func TestTopUpMarkerFailureIsSettledNotCredited(t *testing.T) {
 	t.Parallel()
 	s := newShop(t, nil)

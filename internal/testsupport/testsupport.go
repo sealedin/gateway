@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -95,6 +96,19 @@ func (g *FakeGateway) Block(key string) {
 	if live, ok := g.live[usage.TokenHash(key)]; ok {
 		live.Blocked = true
 	}
+}
+
+// SetMetadataField overwrites one metadata field of a live key, for a row whose shape the sales service did not write.
+func (g *FakeGateway) SetMetadataField(key, field string, value any) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	live := g.live[usage.TokenHash(key)]
+	metadata := maps.Clone(live.Metadata)
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+	metadata[field] = value
+	live.Metadata = metadata
 }
 
 // Delete removes a key, as an operator cleaning up does.
