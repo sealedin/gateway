@@ -74,7 +74,11 @@ fi
 checked() {
   local out
   if ! out=$("$@" --json) || [ "$(printf '%s' "$out" | jq -r .success 2>/dev/null)" != "true" ]; then
-    printf '%s\n' "$out" | jq -c '{success, error, message, detail}' 2>/dev/null >&2 || echo "phala $2: no JSON reply, ${#out} bytes" >&2
+    # jq prints nothing and succeeds on an empty reply, so that case is named too: a failure is never silent.
+    if [ -z "$out" ] || ! printf '%s\n' "$out" | jq -c '{success, error, message, detail}' >&2 2>/dev/null; then
+      echo "phala $2: no JSON reply, ${#out} bytes" >&2
+    fi
+    echo "phala $2 failed" >&2
     exit 1
   fi
   printf '%s' "$out"
@@ -85,8 +89,8 @@ print_pins_and_dns() {
   local info
   info=$(checked phala cvms get "$1")
   local app_id base
-  app_id=$(jq -re .app_id <<<"$info")
-  base=$(jq -re .gateway.base_domain <<<"$info")
+  app_id=$(jq -re .app_id <<<"$info") || { echo "the CVM's reply names no app id" >&2; exit 1; }
+  base=$(jq -re .gateway.base_domain <<<"$info") || { echo "the CVM's reply names no gateway domain" >&2; exit 1; }
   if ! [[ $app_id =~ ^[0-9a-f]{40}$ && $base =~ ^[a-z0-9.-]+$ ]]; then
     echo "unexpected app id or gateway domain: $app_id $base" >&2; exit 1
   fi
@@ -101,7 +105,7 @@ case "$mode" in
   create)
     created=$(checked phala deploy -n "$target" -c "$compose" -e "$envfile" -t "$instance" --image "$image" \
       --disk-size 20G --kms phala --no-public-logs --no-public-sysinfo)
-    cvm_id=$(jq -re .vm_uuid <<<"$created")
+    cvm_id=$(jq -re .vm_uuid <<<"$created") || { echo "the deploy reply names no CVM id" >&2; exit 1; }
     echo "created $cvm_id for $domain"
     print_pins_and_dns "$cvm_id"
     ;;

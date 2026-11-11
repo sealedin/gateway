@@ -1,5 +1,5 @@
-# golang:1.27.3-alpine by index digest; scripts/check-image-pins.sh rejects any tag (docs/litellm-pin.md).
-FROM golang@sha256:fa3d596898d9f126af7c01d14ee7597bab3f39cccf392ef36b69fe77cd681f18 AS build
+# golang:1.27.4-alpine by index digest; scripts/check-image-pins.sh rejects any tag (docs/litellm-pin.md).
+FROM golang@sha256:0a5f7fe796599ff487605987432e7619ae45beeb2fba4c2ce0b907879932aebf AS build
 ENV GOTOOLCHAIN=local
 WORKDIR /src
 # Dependencies are pinned by go.sum; download them in their own cached layer.

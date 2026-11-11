@@ -1,10 +1,22 @@
-# Rolls the checked-out release onto the running CVM from the Actions page, then verifies the deployment end to end.
+# Rolls the checked-out release onto the running CVM from the Actions page, then verifies the deployment end to end; or,
+# with mode create, makes a new CVM and prints the DNS records its domain needs (docs/domain.md), which nothing can verify
+# before they exist.
 # Secrets live in the production environment, so a deploy needs no laptop; its protection rules (required reviewer,
 # tags only) are the approval step. The compose is whatever the chosen ref pins, so run it from a release tag.
 name: deploy
 on:
   workflow_dispatch:
     inputs:
+      mode:
+        description: update rolls the release onto the CVM; create makes a new CVM, with a new app id and new derived keys
+        required: false
+        type: choice
+        options: [update, create]
+        default: update
+      cvm_name:
+        description: Name of the new CVM, for create only
+        required: false
+        type: string
       cvm_id:
         description: CVM id to update; empty takes the SEALEDIN_CVM_ID variable
         required: false
@@ -30,6 +42,8 @@ jobs:
       SEALEDIN_PHALA_IMAGE: ${{ vars.SEALEDIN_PHALA_IMAGE || 'dstack-dev-0.5.12' }}
       SEALEDIN_PHALA_INSTANCE: ${{ vars.SEALEDIN_PHALA_INSTANCE || 'tdx.medium' }}
       CVM_ID: ${{ inputs.cvm_id || vars.SEALEDIN_CVM_ID }}
+      MODE: ${{ inputs.mode }}
+      CVM_NAME: ${{ inputs.cvm_name }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -43,7 +57,11 @@ jobs:
             refs/tags/v*) ;;
             *) echo "::warning::$REF is not a release tag; the compose it pins may not be a release." ;;
           esac
-          test -n "$CVM_ID" || { echo "no CVM id: pass the input or set the SEALEDIN_CVM_ID variable" >&2; exit 1; }
+          if [ "$MODE" = create ]; then
+            [[ $CVM_NAME =~ ^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$ ]] || { echo "create needs cvm_name: lowercase letters, digits and hyphens" >&2; exit 1; }
+          else
+            test -n "$CVM_ID" || { echo "no CVM id: pass the input or set the SEALEDIN_CVM_ID variable" >&2; exit 1; }
+          fi
       # The CLI the deploy script drives, at the version it was written against; the lockfile carries the integrity hash.
       - name: phala cli
         run: |
@@ -61,7 +79,11 @@ jobs:
           SOLANA_RPC_API_KEY: ${{ secrets.SOLANA_RPC_API_KEY }}
           SEALEDIN_FEE_PAYER_KEY: ${{ secrets.SEALEDIN_FEE_PAYER_KEY }}
         run: |
-          out=$(./scripts/deploy-phala.sh update "$CVM_ID")
+          if [ "$MODE" = create ]; then
+            out=$(./scripts/deploy-phala.sh create "$CVM_NAME")
+          else
+            out=$(./scripts/deploy-phala.sh update "$CVM_ID")
+          fi
           printf '%s\n' "$out"
           fence='```'
           printf '%s\n%s\n%s\n' "$fence" "$out" "$fence" >> "$GITHUB_STEP_SUMMARY"
@@ -76,7 +98,9 @@ jobs:
           } >> "$GITHUB_OUTPUT"
       # The CVM restarts on an update, so the verifier is retried for up to 15 minutes; it passes only once the new
       # compose-hash is in RTMR3 and the edge serves the endorsed certificate.
+      # A new CVM has a new app id and a new ACME account, so its DNS records and the variables below do not exist yet.
       - name: verify
+        if: inputs.mode != 'create'
         env:
           SEALEDIN_EXPECTED_COMPOSE_HASH: ${{ steps.deploy.outputs.compose_hash }}
           SEALEDIN_EXPECTED_APP_ID: ${{ steps.deploy.outputs.app_id }}
