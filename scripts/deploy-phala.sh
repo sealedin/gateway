@@ -73,7 +73,11 @@ fi
 # response, in case one ever carried request fields.
 checked() {
   local out
-  if ! out=$("$@" --json) || [ "$(printf '%s' "$out" | jq -r .success 2>/dev/null)" != "true" ]; then
+  if out=$("$@" --json); then
+    # A create prints a progress line ahead of its JSON, so the reply is read from its first line that opens an object.
+    out=$(sed -n '/^{/,$p' <<<"$out")
+  fi
+  if [ "$(printf '%s' "$out" | jq -r .success 2>/dev/null)" != "true" ]; then
     # jq prints nothing and succeeds on an empty reply, so that case is named too: a failure is never silent.
     if [ -z "$out" ] || ! printf '%s\n' "$out" | jq -c '{success, error, message, detail}' >&2 2>/dev/null; then
       echo "phala $2: no JSON reply, ${#out} bytes" >&2
