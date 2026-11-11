@@ -1,6 +1,6 @@
 module github.com/sealedin/gateway
 
-go 1.27.3
+go 1.27.4
 
 require (
 	github.com/gagliardetto/solana-go v1.26.0
