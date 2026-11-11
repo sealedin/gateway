@@ -24,7 +24,7 @@ services:
   # TLS edge: ACME HTTPS for the custom domain through the platform gateway's SNI passthrough, so the certificate is
   # ours and /v1/tls endorses it; TLS-ALPN-01 only, since :80 never passes through (HTTP-01 off, no port 80 published).
   edge:
-    image: ghcr.io/sealedin/gateway-edge@sha256:f92c4db8c8d9c802428ba58bd067f62cbcbf628d3f44bfd79d308f07b5f87315
+    image: ghcr.io/sealedin/gateway-edge@sha256:b72e0b677193af19bb8aefcede58d5e1c6535a9a017943012c76424016ec4047
     environment:
       # &domain: single source of the app domain, shared with identity's -edge-sni; compose refuses to start unset.
       EDGE_DOMAIN: &domain "${SEALEDIN_EDGE_DOMAIN:?set SEALEDIN_EDGE_DOMAIN in the env file}"
@@ -44,7 +44,7 @@ services:
       - egress
 
   gateway:
-    image: ghcr.io/sealedin/gateway-gateway@sha256:eee02262ee7ac0bc70817656440e635c858c1b0a6e80027d65f64e0bdc3d9bc9
+    image: ghcr.io/sealedin/gateway-gateway@sha256:1933fa7bcf9f790dd1bfbd941b469823cc646e206433607cedf1119f19c1f45a
     # The gateway holds no provider key: its only upstream is the egress, which funds Chutes with CHUTES_API_KEY.
     environment:
       # Postgres enables LiteLLM virtual keys: revocable per-member keys with budgets and rate limits.
@@ -65,7 +65,7 @@ services:
   # Attested egress: the gateway's upstream for TEE models. It verifies each Chutes instance against the policy baked
   # into its image and forwards end-to-end encrypted to the attested instance key; never published.
   egress:
-    image: ghcr.io/sealedin/gateway-egress@sha256:7428576c3b05283ca71112402ef29574934bdc9d439a2fc17a123c3bdb908b8d
+    image: ghcr.io/sealedin/gateway-egress@sha256:72de4791c61bdd75b7ba784e23c210a063509b1a01991078655adcf4ad4631b7
     environment:
       CHUTES_API_KEY: ${CHUTES_API_KEY:?set CHUTES_API_KEY in the env file}
     networks:
@@ -75,7 +75,7 @@ services:
   # The sales service's only path to Solana: an allowlist of JSON-RPC methods to the hosts baked into its image; it holds
   # the provider's API key and no other; never published.
   rpcproxy:
-    image: ghcr.io/sealedin/gateway-rpcproxy@sha256:b5bfd7ad2af7c223e8731b78528e1b982ad4555c8a7a2f5e72f9937e9507f44d
+    image: ghcr.io/sealedin/gateway-rpcproxy@sha256:9dc7ec40c32c00946f384e4efa3bed461e4ec8023fb9a2aa7684351ad8facad0
     environment:
       SOLANA_RPC_API_KEY: ${SOLANA_RPC_API_KEY:?set SOLANA_RPC_API_KEY in the env file}
     networks:
@@ -85,7 +85,7 @@ services:
   # Between the edge and LiteLLM's inference routes: reads every reply to its end, so a client hanging up or stalling cannot
   # escape metering. Holds no secret and has no route out; never published.
   drain:
-    image: ghcr.io/sealedin/gateway-drain@sha256:9d16a383989b7813acf1f01c9ef34a1e0844ca5d0c98ccae1dee5ed0438a2f91
+    image: ghcr.io/sealedin/gateway-drain@sha256:53771667df2d1670d4df25e27321065c5a2dfc4a6a89b699626d1a16694ae3e6
     # Above the server's shutdown budget, so what is running still gets billed.
     stop_grace_period: 12m
     depends_on:
@@ -96,7 +96,7 @@ services:
   # Sells keys over x402: parses clients' transactions and holds the operators' fee payer key, the one service that does. It
   # takes the secret behind sold keys and the master key from the identity's tmpfs volumes and has no agent socket; never published.
   sales:
-    image: ghcr.io/sealedin/gateway-sales@sha256:81ebb0db5c24b3ed27c8fe44e524e139a18c91913c4bb2c488d106876547093c
+    image: ghcr.io/sealedin/gateway-sales@sha256:a251272716259484d0d5a922568d41d8809317d75fe433eea389f223211b8095
     command: ["-virtual-key-secret-file", "/run/sealedin-virtualkey/virtual-key-secret", "-fee-payer-address-file", "/run/sealedin-feepayer-address/fee-payer-address", "-master-key-file", "/run/sealedin/litellm-master-key"]
     environment:
       SEALEDIN_FEE_PAYER_KEY: ${SEALEDIN_FEE_PAYER_KEY:?set SEALEDIN_FEE_PAYER_KEY in the env file}
@@ -127,7 +127,7 @@ services:
       - internal
 
   identity:
-    image: ghcr.io/sealedin/gateway-identity@sha256:8dfedbd437814f7d67f034d8b1b00a40dcc011124fa9b435ba9357f04c41dbd7
+    image: ghcr.io/sealedin/gateway-identity@sha256:121038752cea2bb1a2f8ce844effad83d138602fad6693a8613a5e53dcab5288
     # The signed catalog (/v1/catalog) is the image's measured price sheet; the private listener on :8473 is edge-only.
     command: ["-edge-sni", *domain, "-private-listen", ":8473"]
     environment:
