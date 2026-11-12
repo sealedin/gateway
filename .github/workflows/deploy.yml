@@ -17,6 +17,10 @@ on:
         description: Name of the new CVM, for create only
         required: false
         type: string
+      node_id:
+        description: Phala node id for create only (phala nodes list); empty lets the platform choose
+        required: false
+        type: string
       cvm_id:
         description: CVM id to update; empty takes the SEALEDIN_CVM_ID variable
         required: false
@@ -44,6 +48,7 @@ jobs:
       CVM_ID: ${{ inputs.cvm_id || vars.SEALEDIN_CVM_ID }}
       MODE: ${{ inputs.mode }}
       CVM_NAME: ${{ inputs.cvm_name }}
+      SEALEDIN_PHALA_NODE: ${{ inputs.node_id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -59,6 +64,8 @@ jobs:
           esac
           if [ "$MODE" = create ]; then
             [[ $CVM_NAME =~ ^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$ ]] || { echo "create needs cvm_name: lowercase letters, digits and hyphens" >&2; exit 1; }
+          elif [ -n "$SEALEDIN_PHALA_NODE" ]; then
+            echo "node_id applies to create only" >&2; exit 1
           else
             test -n "$CVM_ID" || { echo "no CVM id: pass the input or set the SEALEDIN_CVM_ID variable" >&2; exit 1; }
           fi

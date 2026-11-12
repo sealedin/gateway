@@ -12,7 +12,8 @@
 #
 # Environment: SEALEDIN_EDGE_DOMAIN (required: the custom domain the edge obtains its certificate for; the DNS records
 # it needs are printed after the deploy), SEALEDIN_PHALA_INSTANCE (default tdx.medium), SEALEDIN_PHALA_IMAGE (default
-# dstack-dev-0.5.12 for the beta), SEALEDIN_ROOT_SSH_PUBKEY (the operator's emergency root login: required on a dev image,
+# dstack-dev-0.5.12 for the beta), SEALEDIN_PHALA_NODE (create only: the node id from `phala nodes list`; empty lets the
+# platform choose), SEALEDIN_ROOT_SSH_PUBKEY (the operator's emergency root login: required on a dev image,
 # refused on any other, and kept out of the repo), SEALEDIN_ENV_SOURCE (keychain, the default, or environment), and
 # PHALA_CLOUD_API_KEY or a prior `phala login`.
 #
@@ -27,6 +28,7 @@ target=${2:?$usage}
 domain=${SEALEDIN_EDGE_DOMAIN:?$usage}
 instance=${SEALEDIN_PHALA_INSTANCE:-tdx.medium}
 image=${SEALEDIN_PHALA_IMAGE:-dstack-dev-0.5.12}
+node=${SEALEDIN_PHALA_NODE:-}
 root_key=${SEALEDIN_ROOT_SSH_PUBKEY:-}
 env_source=${SEALEDIN_ENV_SOURCE:-keychain}
 compose=docker-compose.phala.yml
@@ -34,6 +36,9 @@ case "$env_source" in
   keychain|environment) ;;
   *) echo "SEALEDIN_ENV_SOURCE must be keychain or environment, got '$env_source'" >&2; exit 1 ;;
 esac
+if [[ -n $node && ! $node =~ ^[0-9]+$ ]]; then
+  echo "SEALEDIN_PHALA_NODE must be a numeric node id, got '$node'" >&2; exit 1
+fi
 if [[ $image == dstack-dev-* ]]; then
   if [[ -z $root_key ]]; then
     echo "$image needs SEALEDIN_ROOT_SSH_PUBKEY" >&2; exit 1
@@ -108,7 +113,7 @@ print_pins_and_dns() {
 case "$mode" in
   create)
     created=$(checked phala deploy -n "$target" -c "$compose" -e "$envfile" -t "$instance" --image "$image" \
-      --disk-size 20G --kms phala --no-public-logs --no-public-sysinfo)
+      --disk-size 20G --kms phala --no-public-logs --no-public-sysinfo ${node:+--node-id "$node"})
     cvm_id=$(jq -re .vm_uuid <<<"$created") || { echo "the deploy reply names no CVM id" >&2; exit 1; }
     echo "created $cvm_id for $domain"
     print_pins_and_dns "$cvm_id"
