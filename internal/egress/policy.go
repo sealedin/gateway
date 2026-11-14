@@ -11,6 +11,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/sealedin/gateway/internal/egress/chutes"
+	"github.com/sealedin/gateway/internal/egress/near"
 )
 
 // Policy is egress/policy.yaml: the upstream hosts, the re-attestation interval and the measurement allowlists.
@@ -22,6 +23,15 @@ type Policy struct {
 	} `yaml:"hosts"`
 	ReattestInterval time.Duration `yaml:"reattest_interval"`
 	Upstream         chutes.Policy `yaml:",inline"`
+	// Near is the optional second family; without it every model goes to the provider above.
+	Near *NearPolicy `yaml:"near"`
+}
+
+// NearPolicy names the models routed to the provider's gateway and what that gateway must attest to.
+type NearPolicy struct {
+	near.Policy `yaml:",inline"`
+
+	Models []string `yaml:"models"`
 }
 
 // LoadPolicy decodes and validates a policy; a policy that fails here must not start the egress.
@@ -48,6 +58,14 @@ func (p Policy) Validate() error {
 	}
 	if p.ReattestInterval <= 0 {
 		return errors.New("egress: policy reattest_interval must be positive")
+	}
+	if p.Near != nil {
+		if len(p.Near.Models) == 0 {
+			return errors.New("egress: policy near block routes no model")
+		}
+		if err := p.Near.Validate(); err != nil {
+			return err
+		}
 	}
 	return p.Upstream.Validate()
 }

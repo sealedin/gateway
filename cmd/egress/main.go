@@ -16,6 +16,8 @@ import (
 
 	"github.com/sealedin/gateway/internal/egress"
 	"github.com/sealedin/gateway/internal/egress/chutes"
+	"github.com/sealedin/gateway/internal/egress/near"
+	"github.com/sealedin/gateway/internal/egress/upstream"
 	"github.com/sealedin/gateway/internal/gateway"
 	"github.com/sealedin/gateway/internal/limits"
 	"github.com/sealedin/gateway/internal/teeverify/nvidia"
@@ -26,6 +28,7 @@ const (
 	defaultListen   = ":8474"
 	defaultPolicy   = "/policy.yaml"
 	apiKeyEnv       = "CHUTES_API_KEY"    //nolint:gosec // the variable's name, not a credential
+	nearKeyEnv      = "NEARAI_API_KEY"    //nolint:gosec // the variable's name, not a credential
 	upstreamTimeout = limits.UpstreamCall // one call end to end, streaming included
 	verifierTimeout = time.Minute         // one attestation-side call (catalog, NRAS)
 	headerTimeout   = 10 * time.Second
@@ -53,7 +56,7 @@ func run(ctx context.Context, args []string, stderr io.Writer) int {
 	}
 	logger := slog.New(slog.NewTextHandler(stderr, nil))
 
-	handler, err := wire(*policyPath, os.Getenv(apiKeyEnv), logger)
+	handler, err := wire(*policyPath, os.Getenv(apiKeyEnv), os.Getenv(nearKeyEnv), logger)
 	if err != nil {
 		logger.Error("egress wiring failed", "err", err)
 		return exitUsage
@@ -81,8 +84,8 @@ func run(ctx context.Context, args []string, stderr io.Writer) int {
 	}
 }
 
-// wire builds the provider from the policy; an unset API key is a startup error, not a runtime 503.
-func wire(policyPath, apiKey string, logger *slog.Logger) (http.Handler, error) {
+// wire builds the providers from the policy; an unset API key is a startup error, not a runtime 503.
+func wire(policyPath, apiKey, nearKey string, logger *slog.Logger) (http.Handler, error) {
 	if apiKey == "" {
 		return nil, errors.New(apiKeyEnv + " is not set")
 	}
@@ -110,7 +113,38 @@ func wire(policyPath, apiKey string, logger *slog.Logger) (http.Handler, error) 
 	provider := chutes.NewProvider(policy.Hosts.API, apiKey, newClient(upstreamTimeout), catalog, attester)
 	logger.Info("egress policy loaded", "provider", policy.Provider, "api", policy.Hosts.API,
 		"reattest_interval", policy.ReattestInterval, "images", len(policy.Upstream.TDX.Images))
-	return egress.NewMux(provider, gateway.MaxOutputTokens(), logger), nil
+	models := gateway.MaxOutputTokens()
+	if policy.Near == nil {
+		return egress.NewMux(provider, models, logger), nil
+	}
+	dispatcher, err := withNear(provider, policy, nearKey, models, logger)
+	if err != nil {
+		return nil, err
+	}
+	return egress.NewMux(dispatcher, models, logger), nil
+}
+
+// withNear routes the policy's near models to the second family, each of which must be in the measured allowlist.
+func withNear(first upstream.Provider, policy egress.Policy, apiKey string, models map[string]int,
+	logger *slog.Logger) (upstream.Provider, error) {
+	if apiKey == "" {
+		return nil, errors.New(nearKeyEnv + " is not set")
+	}
+	second, err := near.NewProvider(near.Options{APIKey: apiKey, Timeout: upstreamTimeout, Lifetime: policy.ReattestInterval,
+		Log: logger, Verifier: &near.Verifier{Policy: policy.Near.Policy,
+			TDX: tdx.Verifier{Getter: tdx.HTTPGetter(newClient(verifierTimeout)), Now: time.Now}}})
+	if err != nil {
+		return nil, err
+	}
+	byModel := make(map[string]upstream.Provider, len(policy.Near.Models))
+	for _, model := range policy.Near.Models {
+		if _, measured := models[model]; !measured {
+			return nil, fmt.Errorf("policy near model %q is not in the measured allowlist", model)
+		}
+		byModel[model] = second
+	}
+	logger.Info("egress second family loaded", "provider", "near", "api", policy.Near.API, "models", len(byModel))
+	return egress.Dispatcher{Default: first, ByModel: byModel}, nil
 }
 
 // newClient talks only to the hosts the policy names: no proxy from the environment, no redirects.

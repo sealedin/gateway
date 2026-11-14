@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net"
 	"net/url"
 	"os"
@@ -34,6 +35,41 @@ func TestRunRefusesToStartWithoutKeyOrPolicy(t *testing.T) {
 			t.Setenv("CHUTES_API_KEY", tt.key)
 			var stderr bytes.Buffer
 			require.Equal(t, exitUsage, run(context.Background(), tt.args, &stderr))
+			require.Contains(t, stderr.String(), tt.want)
+		})
+	}
+}
+
+// A policy with a second family needs that family's key, and routes only models the measured allowlist holds.
+func TestRunRefusesASecondFamilyItCannotServe(t *testing.T) {
+	measured, err := os.ReadFile(filepath.Join("..", "..", "egress", "policy.yaml"))
+	require.NoError(t, err)
+	const block = `
+near:
+  models: [%s]
+  api: https://cloud-api.near.ai
+  guests:
+    - mrtd: 7fe60787222bd394cb516abca2435f22f035ab2cc9c0a4b4b3b148e46297f3d931a237b72f359052c6e657d8c1409173
+      rtmr0: d090162bff4b1d1dc74dc59dc548838efc4b811b173da8536efa8e2a9c045da70ee092301293ad90afebee448bcd0211
+      rtmr1: 4ae609807c765916a31d724786ed74bcb97e168a9d937b04936aeef2015c907eba5ac352c6bcd749c246fd62ffb659ec
+      rtmr2: 764489f277a8540189761e72b4238ba36d4d647e11bd958d8ab5522af2a4867b0ff63e06b0c4967f1857236244040a5d
+  td_attributes: "0000001000000000"
+  xfam: e702060000000000
+  app_ids: [f550fdfb4eb8ad787c1bcd423f091cbb4a4431ae]
+  key_providers: [7b7d]
+`
+	tests := []struct{ name, model, nearKey, want string }{
+		{"no key for it", "Qwen/Qwen3.8-27B-TEE", "", "NEARAI_API_KEY"},
+		{"a model outside the allowlist", "not/measured", "sk-x", "not in the measured allowlist"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			policy := filepath.Join(t.TempDir(), "policy.yaml")
+			require.NoError(t, os.WriteFile(policy, append(measured, []byte(fmt.Sprintf(block, tt.model))...), 0o600))
+			t.Setenv("CHUTES_API_KEY", "cpk_x")
+			t.Setenv("NEARAI_API_KEY", tt.nearKey)
+			var stderr bytes.Buffer
+			require.Equal(t, exitUsage, run(context.Background(), []string{"-policy", policy}, &stderr))
 			require.Contains(t, stderr.String(), tt.want)
 		})
 	}
