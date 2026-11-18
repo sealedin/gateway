@@ -1,6 +1,6 @@
 # Chutes upstream policy, baked into the measured egress image: changing any value here is a governance change (new
 # digest, new RTMR3), never a per-operator knob.
-# Measurements last synced on 2026-11-05 from api.chutes.ai/servers/tee/measurements (make sync-measurements).
+# Measurements last synced on 2026-11-18 from api.chutes.ai/servers/tee/measurements (make sync-measurements).
 # First captured on 2026-10-27 from the evidence of every TEE chute in the live catalog (140 instances across 10
 # chutes); provenance and the refresh procedure are in internal/teeverify/testdata/chutes/README.md; sek8s publishes
 # the inputs to reproduce them (chutesai/sek8s).
@@ -19,6 +19,7 @@ tdx:
     - 052183ad6cca5ad4aef7e31dc3f6c47be2ba90c288a55420bf432301374f1bd9932ea7d6b5da999c4fecf578c4b0a21a
     - 0e53740f96063640ec986e9f95a2cb601bd686c34229882a05fe7a4350d78735fc3dc2439b6052665ef888e38a292076
     - 0e990b232dc6df68c5208dac9eb23f777950b7b9ce638b8299dd44ba97902cbcc035c97b704cb28a23643771f8438cbc
+    - 1b216dc655596de1c273c43786e495a629ce4829f099380223a1295011ee59bbda87059e3f277b6162bc50e0cfbcff31
     - 212d8284fe29a52a033cd662763e452915d2002bcc3c3e73aa660b100087bd3cce8aef414c3d7012f6a857f392c1919b
     - 34c932b17fa65b230d848ad0ca6b8186dc347b129f926f968f6b607dae07e1968177684d209a1830d37b5d0486c97618
     - 44efeea3a647090c2969cca7f29963dde696d99542c28536a20ad3586a639ef7e230d8d4e325c55f3597dc7b58b30903
@@ -37,6 +38,7 @@ tdx:
     - c2857dd69249c2f976ad070359b7bebc828c9d39a899bebc1fc9077072d97c6137f626b9ce7280fff0aa7e68481f16c6
     - e7bfc6f65f062f9aeaa6882c8a78cc7b134ac633992ad5cd1f66a5e2f543b4dc331e3d254bbcc9a29a61a9f971c27807
     - e861504d4a05ba1e949618ef759d6fbf0c69e4774b667e9fb876b664cb1bb70e3094d2cddc9ac6c52d4b5d352ba2e1d3
+    - ea202d61f0a47602a099a060e8327c9787092d715a22559aa13fb1a461811d5ebfe4602a9413c23c4317a363bf7d991f
     - fc71a5a8edcb1f6d307d59e62ce257365df0f233ae2334691f99d2136832d911f8be975b92f88036db8a4906574519c4
   # RTMR1-3 as one tuple per sek8s guest image build: kernel and initramfs, command line, measured root filesystem.
   images:
