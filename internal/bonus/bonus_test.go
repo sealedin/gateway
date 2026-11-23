@@ -141,6 +141,20 @@ func (w *world) claim() *httptest.ResponseRecorder {
 	return w.callback(cookie, "code=good-code&state="+sent.Get("state"))
 }
 
+// landing is where a reply sends the browser and the outcome it carries in the fragment.
+func landing(t *testing.T, rec *httptest.ResponseRecorder) (string, url.Values) {
+	t.Helper()
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status %d, body %s", rec.Code, rec.Body)
+	}
+	target, fragment, _ := strings.Cut(rec.Header().Get("Location"), "#")
+	outcome, err := url.ParseQuery(fragment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return target, outcome
+}
+
 func TestFollowerGetsOneKey(t *testing.T) {
 	w := newWorld(t, 5)
 	cookie, sent := w.signIn()
@@ -150,11 +164,12 @@ func TestFollowerGetsOneKey(t *testing.T) {
 	}
 
 	rec := w.callback(cookie, "code=good-code&state="+sent.Get("state"))
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), testKey) {
-		t.Fatalf("status %d, body %s", rec.Code, rec.Body)
+	target, outcome := landing(t, rec)
+	if target != "https://site.example/bonus" || outcome.Get("result") != bonus.ResultIssued || outcome.Get("key") != testKey {
+		t.Fatalf("sent to %s with %v", target, outcome)
 	}
 	if rec.Header().Get("Cache-Control") != "no-store" {
-		t.Error("the page with the key may be cached")
+		t.Error("the redirect with the key may be cached")
 	}
 	challenge := sha256.Sum256([]byte(w.verifier))
 	if base64.RawURLEncoding.EncodeToString(challenge[:]) != sent.Get("code_challenge") {
@@ -169,9 +184,8 @@ func TestFollowerGetsOneKey(t *testing.T) {
 		t.Errorf("ledger: %q", recorded)
 	}
 
-	again := w.claim()
-	if strings.Contains(again.Body.String(), testKey) || !strings.Contains(again.Body.String(), bonus.TitleTaken) {
-		t.Errorf("second claim: %s", again.Body)
+	if _, again := landing(t, w.claim()); again.Get("result") != bonus.ResultTaken || again.Has("key") {
+		t.Errorf("second claim: %v", again)
 	}
 	if len(w.issued) != 1 {
 		t.Errorf("issued %d keys", len(w.issued))
@@ -184,16 +198,16 @@ func TestRefusals(t *testing.T) {
 		setup func(*world)
 		want  string
 	}{
-		{"not following", func(w *world) { w.follows = false }, bonus.TitleNotFollowing},
-		{"account too new", func(w *world) { w.createdAt = time.Now().Add(-time.Hour) }, bonus.TitleTooNew},
+		{"not following", func(w *world) { w.follows = false }, bonus.ResultNotFollowing},
+		{"account too new", func(w *world) { w.createdAt = time.Now().Add(-time.Hour) }, bonus.ResultTooNew},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			w := newWorld(t, 5)
 			c.setup(w)
-			rec := w.claim()
-			if !strings.Contains(rec.Body.String(), c.want) || len(w.issued) != 0 {
-				t.Fatalf("body %s, issued %v", rec.Body, w.issued)
+			_, outcome := landing(t, w.claim())
+			if outcome.Get("result") != c.want || outcome.Has("key") || len(w.issued) != 0 {
+				t.Fatalf("outcome %v, issued %v", outcome, w.issued)
 			}
 		})
 	}
@@ -206,8 +220,8 @@ func TestForeignStateCostsNothing(t *testing.T) {
 		w.callback(cookie, "code=good-code&state=someone-elses"),
 		w.callback(nil, "code=good-code&state=anything"),
 	} {
-		if rec.Code != http.StatusBadRequest {
-			t.Errorf("status %d", rec.Code)
+		if _, outcome := landing(t, rec); outcome.Get("result") != bonus.ResultExpired {
+			t.Errorf("outcome %v", outcome)
 		}
 	}
 	if w.xCalls != 0 || len(w.issued) != 0 {
@@ -217,8 +231,8 @@ func TestForeignStateCostsNothing(t *testing.T) {
 
 func TestPromotionEndsAtTheCapAcrossRestarts(t *testing.T) {
 	w := newWorld(t, 1)
-	if rec := w.claim(); !strings.Contains(rec.Body.String(), testKey) {
-		t.Fatalf("first claim: %s", rec.Body)
+	if _, first := landing(t, w.claim()); first.Get("key") != testKey {
+		t.Fatalf("first claim: %v", first)
 	}
 	ledger, err := bonus.OpenLedger(w.ledger) // what a restart reads
 	if err != nil || ledger.Count() != 1 {
@@ -227,7 +241,7 @@ func TestPromotionEndsAtTheCapAcrossRestarts(t *testing.T) {
 	calls := w.xCalls
 	rec := httptest.NewRecorder()
 	w.mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/x/start", http.NoBody))
-	if !strings.Contains(rec.Body.String(), bonus.TitleOver) || w.xCalls != calls {
-		t.Fatalf("start after the cap: status %d, body %s", rec.Code, rec.Body)
+	if _, outcome := landing(t, rec); outcome.Get("result") != bonus.ResultOver || w.xCalls != calls {
+		t.Fatalf("start after the cap: %v", outcome)
 	}
 }

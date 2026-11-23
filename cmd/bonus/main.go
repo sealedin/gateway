@@ -55,7 +55,7 @@ func run(ctx context.Context, args []string, stderr io.Writer) int {
 	gatewayURL := flags.String("gateway", "", "the gateway's https origin, whose /v1/keys issues the keys")
 	ledgerFile := flags.String("ledger-file", "bonus-ledger", "file recording the aliases given a bonus")
 	cfg := bonus.Config{}
-	flags.StringVar(&cfg.SiteURL, "site", defaultSite, "where the pages link to")
+	flags.StringVar(&cfg.SiteURL, "site", defaultSite, "the site whose bonus page shows the outcome")
 	flags.StringVar(&cfg.Account, "account", defaultAccount, "the X account to follow")
 	flags.Float64Var(&cfg.BudgetUSD, "budget", defaultBudget, "USD one bonus key may spend")
 	flags.IntVar(&cfg.RPMLimit, "rpm", defaultRPM, "requests a minute one bonus key may make")
