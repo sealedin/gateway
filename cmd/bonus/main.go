@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/sealedin/gateway/internal/bonus"
+	"github.com/sealedin/gateway/internal/operator"
 )
 
 const (
@@ -95,9 +96,9 @@ func run(ctx context.Context, args []string, stderr io.Writer) int {
 
 // wire refuses to start on anything that would send a token or a key over plain HTTP, or give bonuses without bounds.
 func wire(cfg bonus.Config, gatewayURL, ledgerFile string, logger *slog.Logger) (http.Handler, error) {
-	operator, clientID := os.Getenv(operatorEnv), os.Getenv(clientIDEnv)
+	token, clientID := os.Getenv(operatorEnv), os.Getenv(clientIDEnv)
 	switch {
-	case operator == "" || clientID == "":
+	case token == "" || clientID == "":
 		return nil, errors.New("set " + operatorEnv + " and " + clientIDEnv)
 	case !strings.HasPrefix(cfg.PublicURL, "https://") || !strings.HasPrefix(gatewayURL, "https://"):
 		return nil, errors.New("-public-url and -gateway must be https origins")
@@ -111,7 +112,7 @@ func wire(cfg bonus.Config, gatewayURL, ledgerFile string, logger *slog.Logger) 
 	client := &http.Client{Timeout: callTimeout}
 	x := &bonus.X{ClientID: clientID, ClientSecret: os.Getenv(clientSecretEnv), AuthorizeURL: bonus.DefaultAuthorizeURL,
 		APIBase: bonus.DefaultAPIBase, HTTP: client}
-	keys := &bonus.Operator{BaseURL: gatewayURL, Token: operator, HTTP: client}
+	keys := &operator.Client{BaseURL: gatewayURL, Token: token, HTTP: client}
 	mux := http.NewServeMux()
 	bonus.New(cfg, x, keys, ledger, logger).Register(mux)
 	logger.Info("bonus ledger read", "given", ledger.Count())

@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"golang.org/x/time/rate"
+
+	"github.com/sealedin/gateway/internal/operator"
 )
 
 const (
@@ -51,7 +53,7 @@ type Config struct {
 type Service struct {
 	cfg     Config
 	x       *X
-	keys    *Operator
+	keys    *operator.Client
 	ledger  *Ledger
 	logger  *slog.Logger
 	limiter *rate.Limiter
@@ -60,7 +62,7 @@ type Service struct {
 }
 
 // New wires the routes.
-func New(cfg Config, x *X, keys *Operator, ledger *Ledger, logger *slog.Logger) *Service {
+func New(cfg Config, x *X, keys *operator.Client, ledger *Ledger, logger *slog.Logger) *Service {
 	return &Service{cfg: cfg, x: x, keys: keys, ledger: ledger, logger: logger,
 		limiter: rate.NewLimiter(claimsPerSecond, claimsBurst)}
 }

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/sealedin/gateway/internal/bonus"
+	"github.com/sealedin/gateway/internal/operator"
 )
 
 const (
@@ -101,7 +102,7 @@ func newWorld(t *testing.T, maxKeys int) *world {
 	cfg := bonus.Config{PublicURL: "https://bonus.example", SiteURL: "https://site.example", Account: testAccount, BudgetUSD: 10,
 		RPMLimit: 20, MaxKeys: maxKeys, MinAccountAge: 30 * 24 * time.Hour}
 	xClient := &bonus.X{ClientID: "client", AuthorizeURL: "https://x.example/authorize", APIBase: xServer.URL, HTTP: xServer.Client()}
-	operator := &bonus.Operator{BaseURL: gwServer.URL, Token: testOperator, HTTP: gwServer.Client()}
+	operator := &operator.Client{BaseURL: gwServer.URL, Token: testOperator, HTTP: gwServer.Client()}
 	w.service = bonus.New(cfg, xClient, operator, ledger, slog.New(slog.DiscardHandler))
 	w.mux = http.NewServeMux()
 	w.service.Register(w.mux)
