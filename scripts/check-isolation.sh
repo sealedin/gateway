@@ -38,3 +38,4 @@ if [ "$readers" != "cmd/sales/main.go" ]; then
   exit 1
 fi
 check cmd/bonus '/internal/(enclave|egress|teeverify|x402|sales|usage|keys|rpcproxy)(/|$)|gagliardetto' 'runs outside the enclave with the operator token only: it must link nothing that holds a key or parses a payment'
+check cmd/coinpay '/internal/(enclave|egress|teeverify|x402|sales|usage|keys|rpcproxy|bonus)(/|$)|gagliardetto' 'runs outside the enclave with the operator token only: it must link nothing that holds a key or parses a payment'
