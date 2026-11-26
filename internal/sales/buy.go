@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	minPurchaseUSD  = 20 // per purchase; per-day limits are deliberately not enforced here
+	minPurchaseUSD  = 5 // per purchase; per-day limits are deliberately not enforced here
 	maxPurchaseUSD  = 500
 	baseUnitsPerUSD = 1_000_000 // USDC has six decimals and buys credits 1:1
 	fractionDigits  = len("000000")

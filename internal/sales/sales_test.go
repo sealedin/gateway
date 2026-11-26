@@ -182,12 +182,12 @@ func TestBuyValidatesTheAmount(t *testing.T) {
 		body string
 		want int
 	}{
-		{`{"amount_usd":20}`, http.StatusPaymentRequired},
+		{`{"amount_usd":5}`, http.StatusPaymentRequired},
 		{`{"amount_usd":500}`, http.StatusPaymentRequired},
-		{`{"amount_usd":20.000001}`, http.StatusPaymentRequired},
-		{`{"amount_usd":19.999999}`, http.StatusBadRequest},
+		{`{"amount_usd":5.000001}`, http.StatusPaymentRequired},
+		{`{"amount_usd":4.999999}`, http.StatusBadRequest},
 		{`{"amount_usd":500.000001}`, http.StatusBadRequest},
-		{`{"amount_usd":20.1234567}`, http.StatusBadRequest},
+		{`{"amount_usd":5.1234567}`, http.StatusBadRequest},
 		{`{"amount_usd":0}`, http.StatusBadRequest},
 		{`{"amount_usd":-25}`, http.StatusBadRequest},
 		{`{"amount_usd":"25"}`, http.StatusBadRequest},

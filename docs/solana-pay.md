@@ -27,7 +27,7 @@ Served by `cmd/sales` on the TLS site only. `Authorization: Bearer <existing key
 | 401 | none | a bad bearer |
 | 409 | `{"error": ..., "reason": ..., "transaction": ...}` | final |
 
-The `reason` values on a 409 are `below_minimum` (the text says "below the 20 USD minimum"), `revoked`, `credited_elsewhere` and `target_gone`.
+The `reason` values on a 409 are `below_minimum` (the text says "below the 5 USD minimum"), `revoked`, `credited_elsewhere` and `target_gone`.
 
 CORS is the edge's, for `POST /v1/keys/claim` and `GET /v1/catalog` only: origin `https://sealedin.ai`, methods GET and POST, headers `content-type` and `authorization`, with `Retry-After` exposed. Any other origin gets no allow header. x402 buy has no CORS.
 
@@ -40,7 +40,7 @@ CORS is the edge's, for `POST /v1/keys/claim` and `GET /v1/catalog` only: origin
 The key is derived from the enclave-only secret and the reference, so a repeated claim returns the same key and no wallet signature or recovery route is needed. Each transaction is credited once, as a top-up is: a durable blocked marker per transaction names the key, and the credit records the marker in the same update as the budget. The first marker decides the key, so a later claim for another key moves nothing and gets `credited_elsewhere`.
 
 - **A QR scanned twice:** the second payment adds to the same key on the next claim. **A claim is what credits**, so if the page has stopped polling, the money waits in the treasury until the same code is claimed again.
-- **Under 20 USD:** nothing is issued, per transaction, the reply says so and the log says `operator must reconcile` at error level. Two payments of 15 USD do not add up.
+- **Under 5 USD:** nothing is issued, per transaction, the reply says so and the log says `operator must reconcile` at error level. Two payments of 3 USD do not add up.
 - **Over 500 USD:** what was paid is credited.
 - **A lost code:** there is no other way in. The payment stays in the treasury and only the operator can reconcile it, from the chain and the buyer's word.
 

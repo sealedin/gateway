@@ -20,7 +20,7 @@ import (
 
 const (
 	claimPath  = "/v1/keys/claim"
-	amount5USD = 5_000_000
+	amount2USD = 2_000_000
 )
 
 type lockedBuffer struct {
@@ -138,7 +138,7 @@ func TestClaimBelowTheMinimumIssuesNothingAndSaysSo(t *testing.T) {
 	t.Parallel()
 	s := newShop(t, nil)
 	b := newBuyer(t, 4)
-	id := s.pay(t, b, amount5USD)
+	id := s.pay(t, b, amount2USD)
 	got := s.claim(t, b, nil)
 	require.Equal(t, http.StatusConflict, got.status)
 	require.Equal(t, "below_minimum", got.body["reason"])
@@ -217,7 +217,7 @@ func TestClaimNeverRepeatsTheCode(t *testing.T) {
 	var logs lockedBuffer
 	s := newLoggedShop(t, nil, slog.New(slog.NewTextHandler(&logs, nil)))
 	b := newBuyer(t, 8)
-	s.pay(t, b, amount5USD)
+	s.pay(t, b, amount2USD)
 	got := s.claim(t, b, nil)
 	require.NotContains(t, logs.String(), b.code)
 	raw, err := json.Marshal(got.body)
@@ -231,7 +231,7 @@ func TestClaimFindsThePaymentAmongNoise(t *testing.T) {
 	s := newShop(t, nil)
 	b := newBuyer(t, 9)
 	s.chain.LandUnder(t, b.transfer(t, s, amount25USD, false), b.reference, `{"InstructionError":[0,"x"]}`)
-	s.pay(t, b, amount5USD)
+	s.pay(t, b, amount2USD)
 	raw, err := x402client.SolanaPayTransfer{Payer: s.world.Payer, Treasury: x402test.Public(x402test.NewKey(t)), Mint: s.world.Policy.Mint,
 		Amount: amount25USD, Reference: b.reference, Blockhash: solana.Hash{77}}.Build()
 	require.NoError(t, err)
@@ -248,7 +248,7 @@ func TestClaimCreditsPastATransactionThatDoesNotRead(t *testing.T) {
 	s := newShop(t, nil)
 	b := newBuyer(t, 17)
 	s.pay(t, b, amount25USD)
-	s.chain.RefuseTransaction(s.pay(t, b, amount5USD).String())
+	s.chain.RefuseTransaction(s.pay(t, b, amount2USD).String())
 	got := s.claim(t, b, nil)
 	require.Equal(t, http.StatusOK, got.status, "%v", got.body)
 	require.InEpsilon(t, 25.0, got.body["max_budget_usd"], 1e-12)
@@ -260,7 +260,7 @@ func TestClaimAlertsOnceForAPaymentUnderTheMinimum(t *testing.T) {
 	var logs bytes.Buffer
 	s := newLoggedShop(t, nil, slog.New(slog.NewTextHandler(&lockedWriter{w: &logs}, nil)))
 	b := newBuyer(t, 18)
-	s.pay(t, b, amount5USD)
+	s.pay(t, b, amount2USD)
 	require.Equal(t, http.StatusConflict, s.claim(t, b, nil).status)
 	require.Equal(t, http.StatusConflict, s.claim(t, b, nil).status)
 	require.Equal(t, 1, bytes.Count(logs.Bytes(), []byte("operator must reconcile")))
@@ -277,12 +277,12 @@ func TestClaimNeedsBothHosts(t *testing.T) {
 	require.Empty(t, s.fake.Generated())
 }
 
-// One lying host shows a well signed transaction paying 500 USD under a real id that paid 5: it is not read.
+// One lying host shows a well signed transaction paying 500 USD under a real id that paid 2: it is not read.
 func TestClaimReadsNoSubstitutedTransaction(t *testing.T) {
 	t.Parallel()
 	s := newShop(t, nil)
 	b := newBuyer(t, 11)
-	s.pay(t, b, amount5USD)
+	s.pay(t, b, amount2USD)
 	s.chain.Substitute = b.transfer(t, s, 500_000_000, false)
 	got := s.claim(t, b, nil)
 	require.NotEqual(t, http.StatusOK, got.status)
