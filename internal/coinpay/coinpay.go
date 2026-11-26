@@ -139,6 +139,20 @@ func (s *Service) offered(ctx context.Context) ([]Coin, error) {
 	return offered, nil
 }
 
+// minimum is the smallest payment the forwarder forwards in an offered coin.
+func (s *Service) minimum(ctx context.Context, ticker string) (float64, bool) {
+	coins, err := s.offered(ctx)
+	if err != nil {
+		return 0, false
+	}
+	for _, coin := range coins {
+		if coin.Ticker == ticker {
+			return coin.Minimum, true
+		}
+	}
+	return 0, false
+}
+
 func (s *Service) listCoins(w http.ResponseWriter, r *http.Request) {
 	coins, err := s.offered(r.Context())
 	if err != nil {
@@ -177,6 +191,15 @@ func (s *Service) create(w http.ResponseWriter, r *http.Request) {
 	amount, quoteRate, err := s.pay.Quote(r.Context(), req.Ticker, usd)
 	if err != nil {
 		s.unavailable(w, "quote", err)
+		return
+	}
+	if least, known := s.minimum(r.Context(), req.Ticker); !known {
+		httpjson.Error(w, http.StatusBadRequest, "this coin is not offered; see "+coinsRoute)
+		return
+	} else if coins, parseErr := strconv.ParseFloat(amount, 64); parseErr != nil || coins < least {
+		// The forwarder keeps a payment under its minimum for the coin: such an order could be paid and never become a key.
+		httpjson.Error(w, http.StatusBadRequest, "the forwarder takes no less than "+strconv.FormatFloat(least, 'f', -1, 64)+
+			" of this coin, about "+formatUSD(math.Ceil(least/quoteRate*centsPerUSD)/centsPerUSD)+" USD; buy more or pick another coin")
 		return
 	}
 	id, claim := strings.ToLower(rand.Text()), rand.Text()

@@ -336,6 +336,19 @@ func TestAnOrderNeedsAnOfferedCoinAndAnAmountInRange(t *testing.T) {
 	}
 }
 
+// The forwarder keeps a payment under its minimum for the coin, so such an order must not be opened.
+func TestAnOrderPricedUnderTheForwardersMinimumIsRefused(t *testing.T) {
+	w := newWorld(t)
+	w.rate = xmrRate / 10 // 20 USD is now 0.004 XMR, and the forwarder takes no less than 0.01
+	code, reply := w.order("xmr", 20)
+	if code != http.StatusBadRequest || !strings.Contains(string(mustJSON(t, reply["error"])), "50 USD") || len(w.callbacks) != 0 {
+		t.Fatalf("order: %d %v, callbacks %v", code, reply, w.callbacks)
+	}
+	if code, reply = w.order("xmr", 50); code != http.StatusCreated {
+		t.Fatalf("order at the minimum: %d %v", code, reply)
+	}
+}
+
 func jsonEqual(t *testing.T, a, b string) bool {
 	t.Helper()
 	var x, y any

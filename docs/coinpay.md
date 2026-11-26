@@ -24,14 +24,14 @@ A payment of less than was quoted buys a smaller key, and one of more buys a lar
 
 - It cannot top up a key: the operator's route issues keys and has no way to raise a budget. Each paid order is a new key.
 - One order is one key. A second payment to a paid order is logged as an error with its transaction, to be credited by hand.
-- A payment below the forwarder's minimum for the coin never leaves the forwarder's address and is never reported.
+- A payment below the forwarder's minimum for the coin never leaves the forwarder's address and is never reported. An order priced below that minimum is refused with the amount in USD that would pass, but a buyer who then sends less than was quoted can still fall under it.
 - A crash between the gateway issuing a key and the order being recorded loses that key. The next callback finds the alias taken and logs it, to be mended by hand.
 
 ## Limits
 
 | Limit | Default | Flag |
 |---|---|---|
-| Smallest purchase | 20 USD | `-min-usd` |
+| Smallest purchase | 5 USD, and no less than the forwarder's minimum for the coin | `-min-usd` |
 | Largest credit of one payment | 500 USD | `-max-usd` |
 | Rate of a bought key | 60 requests a minute | `-rpm` |
 | How long an order's price holds | 1 hour | `-quote-ttl` |

@@ -27,7 +27,7 @@ const (
 
 	defaultListen     = ":8481"
 	defaultSite       = "https://sealedin.ai"
-	defaultMinUSD     = 20
+	defaultMinUSD     = 5
 	defaultMaxUSD     = 500
 	defaultRPM        = 60
 	defaultQuoteTTL   = time.Hour
